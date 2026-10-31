@@ -1,0 +1,52 @@
+name: ONNXグラフ生成とHugging Face公開
+
+"on":
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dqix-battle-emulator-onnx-publish
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_REPO_ID: RabbitDaisuke/dqix-BattleEmulator-onnx
+    steps:
+      - name: ソースを取得
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Node.js 24を準備
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          check-latest: false
+
+      - name: Python 3.12を準備
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 固定した検証・公開依存をインストール
+        run: python -m pip install --disable-pip-version-check --no-cache-dir -r requirements-build.txt
+
+      - name: ソースからグラフとHTMLを生成
+        run: node scripts/build-release.mjs --out dist
+
+      - name: 公開ファイルとONNXを検証
+        run: python scripts/validate_release.py dist
+
+      - name: Hugging Faceへ公開し保存内容を照合
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python scripts/publish_hf.py dist --repo-id "$HF_REPO_ID" --branch main

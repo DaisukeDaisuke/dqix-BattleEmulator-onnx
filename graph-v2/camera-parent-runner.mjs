@@ -1,0 +1,44 @@
+// New enclosing entry: initial fields -> preprocessing -> real goal dispatch
+// -> conditional route planning. Existing delivered phase files are immutable.
+import {validateGraphInputs} from './input-domains.mjs';
+import {createCameraPreprocessRunner,CAMERA_PREPROCESS_MODELS} from './camera-preprocess-runner.mjs';
+import {createCameraGoalDispatcher,CAMERA_DISPATCH_MODELS} from './camera-goal-dispatcher.mjs';
+import {createCameraRouteBytePlanner,CAMERA_ROUTE_BYTE_MODELS} from './camera-route-byte-planner.mjs';
+export const CAMERA_PARENT_MODELS=[...new Set(['rom-camera-parent-control','rom-camera-route-post4',...CAMERA_PREPROCESS_MODELS,...CAMERA_DISPATCH_MODELS,...CAMERA_ROUTE_BYTE_MODELS])];
+const clone=x=>structuredClone(x),pad=(a,n,v=0)=>[...a,...Array(n-a.length).fill(v)];
+export async function createCameraParentRunner({runGraph,getModel,onTrace}={}){
+ if(typeof runGraph!=='function'||typeof getModel!=='function')throw Error('runGraph/getModel required');
+ let graphCalls=0;const runtime={getModel,onTrace,runGraph:async(...args)=>{graphCalls++;return runGraph(...args);}},preprocessor=await createCameraPreprocessRunner(runtime),dispatcher=await createCameraGoalDispatcher(runtime),planner=await createCameraRouteBytePlanner(runtime);
+ const control=await getModel('rom-camera-parent-control'),routeIr=await getModel('rom-camera-route-byte-prepare'),postIr=await getModel('rom-camera-route-post4');
+ async function gate(rows,phase){for(const [lane,row]of rows.entries()){const errors=validateGraphInputs(control.contract,row);if(errors.length)throw Error(`camera parent lane${lane}: ${errors.join('; ')}`);}const out=await runtime.runGraph(control.name,rows,{phase});if(onTrace)await onTrace({phase,model:control.name,inputs:clone(rows),outputs:clone(out)});return out;}
+ function controlInput(row,commit,dispatcherReturn){const c=row.commands[row.currentActionIndex];return {battleType:[row.battleType],sourceId:[c?.participants?.[0]??0],sourcePresent:[!!c?.participants?.length],sceneByte:[row.sceneByte],dispatcherReturn:[dispatcherReturn],commit:[commit],enabled:[row.enabled!==false],ids:pad(row.roster.map(r=>r.id),4),rosterCount:[row.roster.length],visualFlagsBytes:pad(row.roster.flatMap(r=>Array.from({length:4},(_,i)=>Math.floor(r.visualFlags/2**(i*8))%256)),16)};}
+ async function run({rows,maxRouteAttempts=10861}={}){
+  if(!Array.isArray(rows)||!rows.length)throw Error('Nonempty initial camera-parent batch required');
+  for(const [lane,row]of rows.entries()){
+   for(const actor of row.roster)if(!Array.isArray(actor.storedRoute)||actor.storedRoute.length!==16)throw Error(`lane${lane}: initial storedRoute16 required`);
+   for(const command of row.commands){if(command.participants===null)throw Error('Use an explicit empty participant list for missing records in this joined entry');if(!Array.isArray(command.targets))throw Error('Initial target list required');if(command.targets.length&&(command.targetId!==command.targets[0]||command.targetPresent===false))throw Error('Initial command first target/list fields disagree');if(!command.targets.length&&command.targetPresent!==false)throw Error('Empty initial target list must set targetPresent=false');}
+  }
+  graphCalls=0;const population=await gate(rows.map(r=>controlInput(r,false,0)),'camera:parent:roster');
+  const compactRows=rows.map((row,i)=>({...clone(row),roster:row.roster.filter((_,j)=>population[i].includedRows[j]).map(clone),lookupObjects:[...(row.lookupObjects??[]).map(clone),...row.roster.filter((_,j)=>!population[i].includedRows[j]).map(clone)]}));
+  const prepared=await preprocessor.run({rows:compactRows}),pre=await gate(prepared.rows.map(r=>controlInput(r,false,0)),'camera:parent:gate');
+  const dispatchInputs=prepared.rows.map((r,i)=>({...clone(r),roster:r.roster.map((a,j)=>({...clone(a),flag80:!!pre[i].flag80[j],flag100:!!pre[i].flag100[j]})),enabled:!!pre[i].dispatchEnabled[0]})),goals=await dispatcher.run({rows:dispatchInputs});
+  if(!goals.complete)return {preprocessing:prepared,goals,states:clone(prepared.rows),graphCalls,complete:false,wholeCameraComplete:false,reason:'An explicit unsupported goal-dispatch branch was reached; no route or presentation result is claimed.'};
+  const post=await gate(prepared.rows.map((r,i)=>controlInput(r,true,goals.states[i].returnValue[0])),'camera:parent:commit');
+  const compactStates=prepared.rows.map((r,i)=>({...clone(r),sceneByte:post[i].nextSceneByte[0],roster:r.roster.map((a,j)=>{const s=goals.states[i];return {...clone(a),start:s.actors[j*8],goal:s.actors[j*8+1],auxiliaryNode:s.actors[j*8+2],expansionDepth:s.actors[j*8+3],preferredTarget:s.actors[j*8+4],secondaryTarget:s.actors[j*8+5],faceNode:s.actors[j*8+6]};}),row4Words:Array.from({length:4},(_,j)=>goals.states[i].observedRow4Bytes.slice(j*4,j*4+4).reduce((n,b,k)=>n+b*2**(k*8),0))}));
+  const merge=()=>compactStates.map((s,i)=>({...clone(rows[i]),sceneByte:s.sceneByte,row4Words:[...s.row4Words],roster:rows[i].roster.map(a=>clone(s.roster.find(b=>b.id===a.id)??a)),activeRosterIds:s.roster.map(a=>a.id)}));
+  const defaults=Object.fromEntries(Object.entries(routeIr.contract.defaults).map(([k,v])=>[k,Array.isArray(v)?clone(v):[v]]));
+  const routeInputs=compactStates.map((s,i)=>{
+   if(!post[i].routeEnabled[0])return {...clone(defaults),rosterCount:[0],actionCount:[0],currentActionIndex:[0],enabled:[false]};
+   return {...clone(defaults),roster:pad(s.roster.flatMap(a=>[a.id,a.start,a.goal]),36),rosterCount:[s.roster.length],actionActors:pad(s.commands.map(c=>c.participants[0]??65535),60,65535),actionPresent:pad(s.commands.map(c=>!!c.participants.length),60,false),actionCount:[s.commands.length],currentActionIndex:[s.currentActionIndex],storedRoutes:pad(s.roster.flatMap(a=>a.storedRoute),192),enabled:[true]};
+  });
+  const routes=await planner.run({rows:routeInputs,maxAttempts:maxRouteAttempts});
+  if(!routes.complete)return {preprocessing:prepared,goals,states:merge(),control:post,routes,graphCalls,complete:false,wholeCameraComplete:false,reason:'Route attempt budget exhausted; no completed parent endpoint is claimed.'};
+  compactStates.forEach((s,i)=>{if(post[i].routeEnabled[0])s.roster.forEach((a,j)=>{a.routeCount=routes.output[i].routeCounts[j];a.storedRoute=routes.output[i].routes.slice(j*16,j*16+16);});});
+  const states=merge(),flagInputs=states.map((s,i)=>{const command=s.commands[s.currentActionIndex];return {ids:pad(s.roster.map(a=>a.id),4),objectCount:[s.roster.length],visualPresent:pad(s.roster.map(a=>a.visualPresent!==false),4,false),activeRoster:population[i].includedRows,visualFlagsBytes:pad(s.roster.flatMap(a=>Array.from({length:4},(_,j)=>Math.floor(a.visualFlags/2**(8*j))%256)),16),routeCounts:pad(s.roster.map(a=>a.routeCount),4),movementPresence:pad(s.roster.map(a=>a.movementPresence),4),partyMovementBlocked:pad(s.roster.map(a=>!!a.partyMovementBlocked),4,false),dead:pad(s.roster.map(a=>!!a.dead),4,false),sceneMovementEnabled:[!!s.sceneMovementEnabled],actionActors:pad(s.commands.map(c=>c.participants[0]??65535),60,65535),actionPresent:pad(s.commands.map(c=>!!c.participants.length),60,false),actionCount:[s.commands.length],currentParticipants:pad(command?.participants??[],4),participantCount:[command?.participants.length??0],currentTargets:pad(command?.targets??[],8),targetCount:[command?.targets.length??0],enabled:post[i].routeEnabled};});
+  for(const [lane,row]of flagInputs.entries()){const errors=validateGraphInputs(postIr.contract,row);if(errors.length)throw Error(`camera parent post lane${lane}: ${errors.join('; ')}`);}
+  const flagResults=await runtime.runGraph(postIr.name,flagInputs,{phase:'camera:parent:route-post'});if(onTrace)await onTrace({phase:'camera:parent:route-post',model:postIr.name,inputs:clone(flagInputs),outputs:clone(flagResults)});
+  states.forEach((s,i)=>s.roster.forEach((a,j)=>{a.visualFlags=flagResults[i].nextVisualFlagsBytes.slice(j*4,j*4+4).reduce((n,b,k)=>n+b*2**(k*8),0);}));
+  return {preprocessing:prepared,goals,states,population,control:post,routes,routePost:flagResults,graphCalls,complete:true,wholeCameraComplete:false,consumed:states.map(()=>0),scope:'Initial-only projection of enclosing JPN021dc9cc: battle-type roster selection, mandatory preprocessing, special800/801+party0 early return, goal dispatcher, scene-bit2 commit, conditional route planner including invalid-byte path rejection, and ordered visual-flag suffix. Four correlated raw row+4 words are an explicit initial shared-stack observation; no independently generated flags or expected goals/routes are input. Outer BACT/presentation and final geometry remain separate. Excluded existing objects stay in the lookup population; actual suffix ID lookups may still update their represented flags. Skipped dispatcher/planner lanes keep initial or preprocessing-updated fields and RNG.'};
+ }
+ return {run,models:CAMERA_PARENT_MODELS};
+}

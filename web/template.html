@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DQ9 バトルグラフ実験</title>
+<style>
+:root{color-scheme:light;--paper:#f3f6f5;--ink:#172f3d;--muted:#526b77;--accent:#006d64;--line:#c9d8de;--navy:#183746}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.65 system-ui,-apple-system,"Noto Sans JP",sans-serif}header{padding:30px max(20px,calc((100vw - 1200px)/2));background:var(--navy);color:#fff}header p{color:#dce8eb;margin:8px 0 0;max-width:950px}h1{font-size:clamp(24px,3vw,34px);line-height:1.35;margin:0}main{max-width:1240px;padding:24px 20px 40px;margin:auto}.layout{display:grid;grid-template-columns:minmax(290px,380px) minmax(0,1fr);gap:20px}.panel{border:1px solid var(--line);border-radius:12px;background:white;padding:22px;min-width:0}h2{font-size:18px;margin:0 0 15px}.eyebrow{font-size:12px;letter-spacing:.1em;color:#aad2cb;margin-bottom:5px}label{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}select,input,textarea{width:100%;min-width:0;border:1px solid #9fb4bd;border-radius:6px;background:#fff;color:var(--ink);padding:10px;font:inherit}textarea{font-family:ui-monospace,monospace;font-size:12px;min-height:220px;resize:vertical}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}.buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}button{background:var(--accent);color:white;border:1px solid var(--accent);border-radius:6px;padding:10px 14px;font:inherit;cursor:pointer}button.secondary{background:white;color:var(--accent)}button.stop{background:white;color:#932f29;border-color:#932f29}button:disabled{opacity:.5;cursor:wait}.small{font-size:13px;color:var(--muted)}.status{padding:13px;border-radius:7px;background:#eaf0f5;overflow-wrap:anywhere;margin-bottom:15px}.status.good{background:#e3f1ea;color:#095d3e}.status.bad{background:#fff0ec;color:#8c2d22}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{border:1px solid var(--line);border-radius:7px;padding:12px}.metric span{display:block;font-size:12px;color:var(--muted)}.metric strong{font-size:23px;display:block;line-height:1.5;font-variant-numeric:tabular-nums}.scroll{overflow:auto;max-width:100%;margin-top:18px}table{width:100%;border-collapse:collapse;min-width:720px;font-size:13px}th,td{padding:9px;border-bottom:1px solid #d9e4e8;text-align:left;vertical-align:top;font-variant-numeric:tabular-nums}th{background:#eef4f5;white-space:nowrap}.mono{font-family:ui-monospace,monospace}details{margin-top:17px}summary{cursor:pointer;color:var(--accent);font-size:13px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;background:#eef3f4;border-radius:6px;padding:14px;max-height:420px;overflow:auto}.note{padding-left:12px;border-left:3px solid #83b4aa}.wide{margin-top:20px}.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.facts h3{font-size:14px;margin:0 0 8px}.facts p{font-size:13px;color:var(--muted);margin:0}.check{display:flex;gap:8px;align-items:center;font-weight:400}.check input{width:auto}#device,#scope{overflow-wrap:anywhere}:focus-visible{outline:3px solid #d7aa32;outline-offset:3px}@media(max-width:780px){header{padding:24px 18px}main{padding:16px 12px}.layout{grid-template-columns:1fr}.panel{padding:18px}.facts{grid-template-columns:1fr;gap:14px}.metric strong{font-size:21px}}
+</style>
+</head>
+<body>
+<header><div class="eyebrow">DETERMINISTIC ONNX · CPU / WEBGPU</div><h1>DQ9 バトルグラフ実験</h1><p>初期状態とseedを入力し、固定の計算グラフで戦闘・カメラを実行します。CPUとGPUを同じ条件で照合できます。</p><p id="inventory" class="small" style="color:#aad2cb">モデルを読み込んでいます。</p></header>
+<main>
+<div class="layout">
+<section class="panel"><h2>実行条件</h2>
+<label for="mode">戦闘・カメラ・グラフ</label><select id="mode"></select>
+<label for="preset">初期条件</label><select id="preset"></select>
+<label for="backend">実行方式</label><select id="backend"><option value="native-wasm">CPU / WebAssembly</option><option value="resident-gpu">GPU / WebGPU</option></select>
+<p id="backend-policy" class="small"></p>
+<label for="seed">開始seed（64 bit・16進数）</label><input id="seed" spellcheck="false" maxlength="18" value="0000000000000001">
+<div class="pair"><div><label id="batch-label" for="batch">連続seed数</label><input id="batch" type="number" min="1" max="65536" value="1"></div><div><label id="limit-label" for="limit">最大ターン数</label><input id="limit" type="number" min="1" max="32" value="1"></div></div>
+<label class="check"><input id="warmup" type="checkbox" checked>計測前に同じ入力を1件だけ実行</label>
+<div class="buttons"><button id="run" disabled>実行</button><button id="compare" class="secondary" disabled>CPU / GPUを照合</button><button id="stop" class="stop" disabled>停止を予約</button></div>
+<details><summary>初期状態JSONを編集</summary><p class="small">開始seedと実行上限は上の入力を使用します。他の値はこのJSONから読み込みます。</p><textarea id="input-json" spellcheck="false" aria-label="初期状態JSON"></textarea><button id="reset" class="secondary">初期条件に戻す</button></details>
+<p id="scope" class="small note"></p>
+</section>
+<section class="panel"><h2>実行結果</h2><div id="status" class="status" role="status" aria-live="polite">埋め込みモデルを展開しています。</div>
+<div class="metrics"><div class="metric"><span>実行した入力</span><strong id="count">—</strong></div><div class="metric"><span>実行＋結果の読み出し</span><strong id="elapsed">—</strong></div><div class="metric"><span>処理速度</span><strong id="rate">—</strong></div><div class="metric"><span>CPU / GPUの不一致</span><strong id="differences">—</strong></div></div>
+<p id="timings" class="small">初期化時間とウォームアップ時間は別に表示します。</p><p id="device" class="small">実行方式を選択してください。</p>
+<div class="scroll"><table><thead><tr><th>開始seed</th><th>現在seed</th><th>position</th><th>味方 HP / MP</th><th>敵 HP / MP</th><th>状態・コンボ</th><th>結果</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p id="result-note" class="small">全seedを保持し、先頭32件を表示します。</p><button id="download" class="secondary" disabled>全結果JSONを保存</button>
+<details><summary>全出力・実行条件</summary><pre id="details">未実行</pre></details><details><summary>進行状況</summary><pre id="log">初期化待ち</pre></details>
+</section>
+</div>
+<section class="panel wide"><h2>実装と計測の範囲</h2><div class="facts"><div><h3>固定の計算グラフ</h3><p>学習による近似は使いません。同じONNXからCPU用WASMとGPU用コードを生成します。未対応の入力はエラーとして報告します。</p></div><div><h3>全入力を保持</h3><p>連続seedを事前に間引きません。終了済みの戦闘は状態を保持し、上限で継続中の戦闘も結果に残します。</p></div><div><h3>この端末での実測</h3><p>速度は選択した処理範囲と端末に依存します。CPU/GPU比較は入力ごとの一致確認で、実ROMとの新規照合ではありません。全構成とカメラ全体の実装は継続中です。</p></div></div><p class="small">戦闘モードは外部ランタイム不要です。単体グラフ・カメラのCPU実行では、一部の宣言済みモデルにONNX Runtime Web 1.31.1をCDNから読み込みます。GPU実行では当該の演算もGPUで処理します。カメラ関連メモリ160ワードのモードは、選択した方式に加え、倍精度演算1モデルをCPUで明示的に実行します。</p></section>
+</main>
+<script id="dq9-release-assets" type="application/json">__DQ9_ASSETS__</script>
+<script type="module">
+__DQ9_APP__
+</script>
+</body>
+</html>

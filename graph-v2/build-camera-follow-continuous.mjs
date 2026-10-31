@@ -1,0 +1,4 @@
+import {writeFile,rename} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {buildFirstFollow} from './build-camera-follow-first.mjs';
+const g=await buildFirstFollow({continuous:true}),b=g.model(),j=JSON.stringify(g.json(),null,2)+'\n',dir=new URL('./',import.meta.url),hash=x=>createHash('sha256').update(x).digest('hex');for(const[ext,v]of[['onnx',b],['json',j]]){const p=new URL(`${g.name}.${ext}.pending-${process.pid}`,dir);await writeFile(p,v);await rename(p,new URL(`${g.name}.${ext}`,dir));}const report={name:g.name,modelSHA256:hash(b),irSHA256:hash(j),nodes:g.nodes.length,bytes:b.length};const p=new URL('camera-follow-continuous-model.json.pending',dir);await writeFile(p,JSON.stringify(report,null,2)+'\n');await rename(p,new URL('camera-follow-continuous-model.json',dir));console.log(JSON.stringify(report,null,2));

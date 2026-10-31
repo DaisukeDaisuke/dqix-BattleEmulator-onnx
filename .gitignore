@@ -1,0 +1,13 @@
+dist/
+node_modules/
+__pycache__/
+*.pyc
+*.onnx
+*.wasm
+*.log
+*.tmp
+*.pending-*
+graph-v2/*.json
+graph-v2/encounter-expansion/*.json
+research/*.json
+hf-publication.json
