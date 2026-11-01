@@ -73,20 +73,25 @@ function definitionsFromInitial(c){
 
 export function multiActorArmInput(c){
   if(c.kind!=='full_turn'||!c.includeBegin||!c.includeFinish||c.actors?.length!==2||!Array.isArray(c.enemies)||c.enemies.length<1||c.enemies.length>8)throw Error(c.id+': unsupported explicit initial RAM layout');
+  if(c.partySpellKnowledge!==undefined&&(!Array.isArray(c.partySpellKnowledge)||c.partySpellKnowledge.length!==9||c.partySpellKnowledge.some(x=>!Number.isInteger(x)||x<0||x>255)))throw Error(c.id+': partySpellKnowledge must contain the nine declared initial auxiliary bytes');
   const definitions=definitionsFromInitial(c),rawActors=[c.actors[0],...c.enemies];
   const actors=rawActors.map((raw,i)=>{
-    const party=i===0,actorId=party?0:191+i,definition=party?null:definitions.monsters[raw.monsterId];
+    const party=i===0,actorId=party?0:191+i,definition=party?null:definitions.monsters[raw.monsterId],initialAuxWord=raw.level??20;
     if(!party&&!definition)throw Error(c.id+': missing initial monster definition');
     const defaults={party:Number(party),id:actorId,baseAttack:raw.baseAttack??raw.attack??0,baseDefense:raw.baseDefense??raw.defense??0,baseAgility:raw.baseAgility??raw.agility??0,
-      level:raw.level??20,dodgeRate:party?2:definition.dodgeRate,guardRate:party?(c.partyShieldGuardTenths??0)/10:definition.guardRate,
+      level:party?(raw.level??20):initialAuxWord&127,dodgeRate:party?2:definition.dodgeRate,guardRate:party?(c.partyShieldGuardTenths??0)/10:definition.guardRate,
       criticalThreshold:party?Math.floor(Math.fround(100*Math.fround(2+Math.fround(Math.fround(.01)*Math.max(((c.deftness??0)&1023)-150,0))))):0,hpEquipmentRegen:raw.hpEquipmentRegen??0};
     const base={actor:ACTOR_FIELDS.map(name=>defaults[name]??0)},bytes=initialStats(raw,{enemy:!party}),projection=projectActor(bytes,base);
     const{history,actorCursor,currentStats,...state}=projection;
     return{actorId,group:party?-1:raw.group??0,present:raw.present!==0,roster:raw.roster!==0,definitionId:party?null:raw.monsterId,originalMonsterId:party?null:raw.monsterId,
-      ...state,species:definition?.species??0,metal:definition?.metal??false,preparation:[0,0,0,0,bit(bytes[0x3c],64)],
+      // The private initializer writes raw.level directly to object+0x144's
+      // packed halfword+10. It does not copy immutable modelFlags there.
+      // Original 02156068 reads species/metal from this initial auxiliary
+      // halfword, independently of the current AI definition at object+0x148.
+      ...state,species:party?0:(initialAuxWord>>>7)&15,metal:!party&&!!(initialAuxWord&0x1000),preparation:[0,0,0,0,bit(bytes[0x3c],64)],
       config:party?[1,0,0,0,2,4,0]:[...definition.config.slice(0,6),Number(bytes[0x53]!==0)],resistances:Array.from(bytes.slice(0x3e,0x54)),
       weapon:[0,0,10,0],criticalBaseRate:party?Math.fround(2+Math.fround(Math.fround(.01)*Math.max(((c.deftness??0)&1023)-150,0))):0,charm:[c.currentCharm??0,c.baseCharm??0,c.equipmentCharm??0],magic:[bytes.readUInt32LE(0x10)>>>10&1023,bytes.readUInt32LE(0x10)>>>20&1023],packedScale:party?[0,(c.deftness??0)&1023]:[0,0],
-      ai:{cursor:actorCursor,alternate:!!(state.state3c&1),revengeId:history[0],previousId:history[1],storedTransitionId:0,previousTargetCount:0,previousTargets:Array(8).fill(-1)},auxiliaryBytes:Array(9).fill(0),
+      ai:{cursor:actorCursor,alternate:!!(state.state3c&1),revengeId:history[0],previousId:history[1],storedTransitionId:0,previousTargetCount:0,previousTargets:Array(8).fill(-1)},auxiliaryBytes:party&&c.partySpellKnowledge?[...c.partySpellKnowledge]:Array(9).fill(0),
       commands:party?[{actionId:c.actionId,targets:[c.targetId??192],targetGroup:0}]:[],initialAuthority:{kind:'explicit strict ARM initial RAM',id:c.id,expectedStateUsed:false}};
   });
   const token=c.comboToken??0;

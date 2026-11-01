@@ -9,6 +9,8 @@ import {aiClosedStep} from './build-ai-closed.mjs';
 import {weightedTargetRepeats} from './encounter-expansion/build-status9-targets.mjs';
 import {commonModifierTargetCallbacks,COMMON_MODIFIER_TARGET_AUTHORITY,COMMON_MODIFIER_TARGET_RULES} from './common-modifier-target-callbacks.mjs';
 import {commonPopulationTargetCallback,COMMON_POPULATION_TARGET_INPUTS,COMMON_POPULATION_TARGET_AUTHORITY} from './common-population-target-callback.mjs';
+import {commonPoisonTargetCallbacks,COMMON_POISON_TARGET_INPUTS,COMMON_POISON_TARGET_AUTHORITY,COMMON_POISON_TARGET_RULES} from './common-poison-target-callbacks.mjs';
+import {commonSilenceTargetCallbacks,COMMON_SILENCE_TARGET_AUTHORITY,COMMON_SILENCE_TARGET_RULES} from './common-silence-target-callbacks.mjs';
 
 const root=new URL('./',import.meta.url),expanded=new URL('./encounter-expansion/',import.meta.url);
 const load=async(name,base=root)=>JSON.parse(await readFile(new URL(name+'.json',base),'utf8'));
@@ -17,6 +19,7 @@ const sum=(g,values)=>values.reduce((total,value)=>g.add(total,g.cast(value,'flo
 const selectBool=(g,condition,a,b)=>g.gt(g.where(condition,g.cast(a,'float32'),g.cast(b,'float32')),0);
 
 export const COMMON_TARGET_INPUTS={
+  ...COMMON_POISON_TARGET_INPUTS,
   ...Object.fromEntries(Object.entries(COMMON_POPULATION_TARGET_INPUTS).map(([key,value])=>[key,{dtype:'float32',label:key,...value}])),
   actorFlagBytes:{width:4,dtype:'float32',default:[0,0,0,0],domain:{min:0,max:255,integer:true},label:'行動者の現在stats18の4byte'},
   enemyOriginalMonsterIds:{width:8,dtype:'float32',default:Array(8).fill(-1),domain:{min:-1,max:65535,integer:true},label:'敵object.enemyType（AI定義IDとは独立、不在・不明は-1）'},
@@ -105,21 +108,21 @@ export function commonTargetCallbacks(g,x,previous,partyGraph){
   const nextSeed=g.where(barrierSelector,g.where(breathDraw,draw.seed,x.seed),g.where(defenseSelector,g.where(repeatActive,repeated.seed,x.seed),g.where(coverDraw,draw.seed,x.seed)));
   const nextPosition=g.where(barrierSelector,g.add(x.position,g.cast(breathDraw,'int32')),g.where(defenseSelector,g.where(repeatActive,repeated.position,x.position),g.add(x.position,g.cast(coverDraw,'int32'))));
   const success=selectBool(g,barrierSelector,g.or(selfMagicSuccess,breathDraw),selectBool(g,defenseSelector,defenseSuccess,coverDraw)),coverage=selectBool(g,defenseSelector,defenseCoverage,g.eq(0,0));
-  return commonPopulationTargetCallback(g,x,commonModifierTargetCallbacks(g,x,{
+  return commonPopulationTargetCallback(g,x,commonModifierTargetCallbacks(g,x,commonPoisonTargetCallbacks(g,x,commonSilenceTargetCallbacks(g,x,{
     nextSeed:g.where(selected,nextSeed,old.nextSeed),nextPosition:g.where(selected,nextPosition,old.nextPosition),consumed:g.where(selected,g.sub(nextPosition,x.position),old.consumed),
     supported:selectBool(g,selected,coverage,old.supported),callbackSuccess:selectBool(g,selected,success,old.callbackSuccess),
     targetCount:g.where(selected,g.where(barrierSelector,barrierCount,g.where(defenseSelector,defenseNextCount,coverNextCount)),old.targetCount),targets:g.where(selected,g.where(barrierSelector,barrierTargets,g.where(defenseSelector,defenseTargets,coverTargets)),old.targets),
     filteredCount:g.where(selected,g.where(barrierSelector,g.where(selfMagicSelector,g.cast(selfMagicSuccess,'float32'),breathCount),g.where(defenseSelector,filteredCount,coverCount)),old.filteredCount),rageCandidateUsed:g.where(selected,g.cast(g.and(defenseSelector,rage),'int32'),old.rageCandidateUsed),
     partyCount:g.where(selected,partyCount,old.partyCount),affectableCount:g.where(selected,g.where(barrierSelector,g.where(selfMagicSelector,g.cast(selfMagicSuccess,'float32'),breathCount),g.where(defenseSelector,filteredCount,coverCount)),old.affectableCount)
-  }));
+  }))));
 }
 
 export async function buildCommonTargetCallbacks(previous){
   const party=await load('rom-party-target4');
   const g=new Graph('rom-common-ai-target',{
-    ...structuredClone(previous.contract),authority:[...(previous.contract.authority??[]),...authority,...COMMON_MODIFIER_TARGET_AUTHORITY,COMMON_POPULATION_TARGET_AUTHORITY],
+    ...structuredClone(previous.contract),authority:[...(previous.contract.authority??[]),...authority,...COMMON_MODIFIER_TARGET_AUTHORITY,...COMMON_POISON_TARGET_AUTHORITY,...COMMON_SILENCE_TARGET_AUTHORITY,COMMON_POPULATION_TARGET_AUTHORITY],
     scope:'Shared ROM target callbacks for one explicit four-party/eight-enemy population. Callback selection depends only on the action input, with no encounter or definition-ID dispatch.',
-    callbackRules:{...previous.contract.callbackRules,...COMMON_MODIFIER_TARGET_RULES,
+    callbackRules:{...previous.contract.callbackRules,...COMMON_MODIFIER_TARGET_RULES,...COMMON_POISON_TARGET_RULES,...COMMON_SILENCE_TARGET_RULES,
       116:'Typed source plus existing BT. Operation12 resolves the original summon table, loaded resource slots and full-group reuse availability; then the original cached live count must be below5 (source object type266 below8). Success writes self/count1, failure preserves the buffer, and neither path draws RNG.',
       56:'Existing typed enemy source with stats+0x3c bit2 enumerates live enemies in group order, keeps signed breath-barrier rank<2, and draws once from a nonempty list. The action execution scope subsequently determines whether the effect is self-only.',
       19:'Eligible enemy defense<65535, defense rank<2 and no raw status bit9; one bounded draw.',138:'Eligible party MP>0 and no raw status bit9; one bounded draw.',

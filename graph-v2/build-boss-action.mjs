@@ -50,9 +50,9 @@ export function buildBossActionCore(options={}){
   const critAfter=options.criticalCheck?options.criticalCheck(g,rng,rule,g.and(active,g.not(preCrit)),{source,target,partySource}):g.and(active,g.not(preCrit),g.lt(rng.bounded(g.and(active,g.not(preCrit)),10000),source.criticalThreshold)),critical=options.finalCritical?options.finalCritical(g,active,g.or(critBefore,critAfter)):g.or(critBefore,critAfter);
   const defendable=g.and(active,g.eq(g.add(g.add(target.sleep,target.paralysis),target.skip),0)),acrobat=g.gt(target.acrobat,0),dodgeGate=g.and(defendable,g.gt(rule.dodge,0)),dodgeRoll=rng.bounded(g.and(dodgeGate,g.not(acrobat)),100);
   const dodgeRate=options.dodgeRate?options.dodgeRate(g,target.dodgeRate,rule,{source,target,partySource}):target.dodgeRate;
-  const dodge=g.and(dodgeGate,g.lt(g.where(acrobat,shared,dodgeRoll),g.where(acrobat,50,g.floor(g.mul(dodgeRate,g.where(g.gt(target.doubleDodge,0),2,1))))));
+  let dodge=g.and(dodgeGate,g.lt(g.where(acrobat,shared,dodgeRoll),g.where(acrobat,50,g.floor(g.mul(dodgeRate,g.where(g.gt(target.doubleDodge,0),2,1))))));
   const guardRate=options.guardRate?options.guardRate(g,target.guardRate,rule,{source,target,partySource}):target.guardRate;
-  const guardGate=g.and(defendable,g.gt(rule.guard,0),g.not(dodge)),guard=g.and(guardGate,g.lt(rng.bounded(guardGate,100),g.mul(guardRate,g.where(g.gt(target.doubleGuard,0),2,1))));
+  const guardGate=g.and(defendable,g.gt(rule.guard,0),g.not(dodge),...(options.guardEligibility?[options.guardEligibility(g,rule,{source,target,partySource})]:[]));let guard=g.and(guardGate,g.lt(rng.bounded(guardGate,100),g.mul(guardRate,g.where(g.gt(target.doubleGuard,0),2,1))));
   const accuracyActive=options.accuracyEligibility?g.and(active,options.accuracyEligibility(g,rule,{source,target,partySource})):active;
   const accuracy=rng.bounded(accuracyActive,100),statusResistance=options.accuracyResistance?options.accuracyResistance(g,rule,resistance):g.where(g.eq(actionId,44),resistance[0],g.where(g.eq(actionId,48),resistance[1],resistance[2])),accuracyRule=options.accuracyThreshold?options.accuracyThreshold(g,rng,rule,{source,target,partySource,active:accuracyActive,critical,statusResistance}):null,threshold=accuracyRule?accuracyRule.threshold:g.where(g.eq(rule.accuracyMode,1),g.floor(g.add(.5,g.mul(rule.baseChance,resistanceFraction(g,statusResistance)))),100);
   const blindGate=g.and(accuracyActive,g.gt(rule.blind,0),g.gt(source.blind,0),...(accuracyRule?.skipBlind?[g.not(accuracyRule.skipBlind)]:[])),blindMiss=g.and(blindGate,g.lt(rng.bounded(blindGate,8),5)),hit=g.and(accuracyActive,g.lt(accuracy,threshold),g.not(blindMiss));
@@ -79,6 +79,10 @@ export function buildBossActionCore(options={}){
   if(equipmentDamage)internal=equipmentDamage.damage;
   internal=g.mul(internal,g.where(g.gt(rule.defend,0),lookup(g,target.defend,DEFEND_MULTIPLIERS),1));
   if(options.postDefendDamage)internal=options.postDefendDamage(g,internal,rule,{source,target,sourceIndex,partySource,active,hit,critical});
+  if(options.postprocessEquipment){
+    const equipment=options.postprocessEquipment(g,internal,rule,{source,target,sourceIndex,partySource,active,hit,critical,dodge,guard});
+    internal=equipment.damage;dodge=equipment.dodge;guard=equipment.guard;
+  }
   const blocked=g.or(dodge,guard);internal=g.where(blocked,0,internal);
   const minimumContext={source,target,sourceIndex,partySource,active,hit,critical,blocked,damageResistance};
   if(options.beforeMinimumDamage)internal=options.beforeMinimumDamage(g,rng,internal,rule,minimumContext);
@@ -95,11 +99,15 @@ export function buildBossActionCore(options={}){
   // positive postprocessor value even with those flags still set.
   if(options.fullPostprocessOnBlocked)internal=g.where(blocked,0,internal);
   combo=combo.map((x,i)=>i===3?x:g.where(active,g.where(keepCombo,x,0),x));
-  const operationHit=g.and(hit,g.not(blocked)),ordinaryPrimaryDamage=g.where(g.eq(rule.operation,1),internal,0),damage=options.primaryDamage?options.primaryDamage(g,ordinaryPrimaryDamage,rule,{source,target,actionId,partySource,active,hit,operationHit}):ordinaryPrimaryDamage,poisonGate=g.and(operationHit,g.eq(rule.additional,4),g.gt(internal,0),g.gt(resistance[3],0)),poisonRoll=rng.bounded(poisonGate,100),poisonChance=g.where(critical,100,g.mul(rule.baseChance,resistanceFraction(g,resistance[3]))),poisoned=g.and(poisonGate,g.lt(poisonRoll,poisonChance));
+  const operationHit=g.and(hit,g.not(blocked)),ordinaryPrimaryDamage=g.where(g.eq(rule.operation,1),internal,0),damage=options.primaryDamage?options.primaryDamage(g,ordinaryPrimaryDamage,rule,{source,target,actionId,partySource,active,hit,operationHit}):ordinaryPrimaryDamage;
+  let poisonResult;
+  if(options.additionalPoison)poisonResult=options.additionalPoison(g,rng,rule,{source,target,partySource,active,operationHit,damage,internalDamage:internal,critical,resistance});
+  else {const poisonGate=g.and(operationHit,g.eq(rule.additional,4),g.gt(internal,0),g.gt(resistance[3],0)),poisonRoll=rng.bounded(poisonGate,100),poisonChance=g.where(critical,100,g.mul(rule.baseChance,resistanceFraction(g,resistance[3])));poisonResult={applied:g.and(poisonGate,g.lt(poisonRoll,poisonChance)),kind:g.constant(2),severe:g.eq(0,0)};}
+  const poisoned=poisonResult.applied;
   const rankEligible=value=>options.dataDrivenRank?g.or(g.and(g.gt(rule.parameter,0),g.lt(value,2)),g.and(g.lt(rule.parameter,0),g.gt(value,-2))):g.gt(value,-2);
   const changedRank=value=>options.dataDrivenRank?g.min(2,g.max(-2,g.add(value,rule.parameter))):g.sub(value,1);
   const rankDefense=g.and(operationHit,g.eq(rule.operation,4),rankEligible(target.defenseRank)),rankAgility=g.and(operationHit,g.eq(rule.operation,5),rankEligible(target.agilityRank)),asleep=g.and(operationHit,g.eq(rule.operation,8),g.eq(target.paralysis,0));
-  const nextTarget={...target,hp:g.max(g.sub(target.hp,damage),0),poison:g.where(poisoned,1,target.poison),defenseRank:g.where(rankDefense,changedRank(target.defenseRank),target.defenseRank),agilityRank:g.where(rankAgility,changedRank(target.agilityRank),target.agilityRank),sleep:g.where(asleep,1,target.sleep),defend:g.where(asleep,0,target.defend),skip:g.where(asleep,0,target.skip)};
+  const nextTarget={...target,hp:g.max(g.sub(target.hp,damage),0),poison:g.where(poisoned,g.cast(poisonResult.severe,'float32'),target.poison),defenseRank:g.where(rankDefense,changedRank(target.defenseRank),target.defenseRank),agilityRank:g.where(rankAgility,changedRank(target.agilityRank),target.agilityRank),sleep:g.where(asleep,1,target.sleep),defend:g.where(asleep,0,target.defend),skip:g.where(asleep,0,target.skip)};
   const additionalTargetEffect=options.targetEffect?options.targetEffect(g,rule,operationHit,{sourceIndex,partySource,source,target,nextTarget,active,aux,status,wakeSkip,rng,internalDamage:internal,critical,resistance}):null;
   if(additionalTargetEffect?.target)Object.assign(nextTarget,additionalTargetEffect.target);
   const dead=g.and(active,g.le(nextTarget.hp,0));
@@ -108,7 +116,7 @@ export function buildBossActionCore(options={}){
   for(const key of ACTOR_FIELDS){actors[0][key]=g.where(firstSource,source[key],nextTarget[key]);actors[1][key]=g.where(firstSource,nextTarget[key],source[key]);}
   for(let i=0;i<2;i++){
     const selected=g.eq(sourceIndex,1-i),apply=g.and(active,selected),death=g.and(apply,dead),sleepSet=g.and(selected,asleep);
-    status[statusKey(i,'poisonKind')]=g.where(g.and(selected,poisoned),2,status[statusKey(i,'poisonKind')]);
+    status[statusKey(i,'poisonKind')]=g.where(g.and(selected,poisoned),poisonResult.kind,status[statusKey(i,'poisonKind')]);
     status[statusKey(i,'sleepDuration')]=g.where(sleepSet,1,status[statusKey(i,'sleepDuration')]);status[statusKey(i,'sleepRecovery')]=g.where(sleepSet,0,status[statusKey(i,'sleepRecovery')]);
     for(const field of BOSS_STATUS_FIELDS.filter(k=>k.startsWith(`a${i}_`)))status[field]=g.where(death,0,status[field]);
     for(const [field,gate]of [['defenseRank',rankDefense],['agilityRank',rankAgility]]){

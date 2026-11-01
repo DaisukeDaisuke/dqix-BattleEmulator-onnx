@@ -7,6 +7,7 @@ import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {BATTLE_DEFINITIONS,seedBytes} from '../data/common-battle.mjs';
 import {ACTOR_FIELDS} from '../graph-v2/common-battle-schema.mjs';
+import {weaponSpeciesTenthsFromWords} from '../graph-v2/common-weapon-species.mjs';
 import {commonArmActorTableInput,actorFromStats,projectedActor} from '../graph-v2/verify-common-action-arm.mjs';
 import {createCommonBattleRunner} from '../runtime/common-battle.mjs';
 import {createGraphExecutor} from '../web/graph-executor.mjs';
@@ -32,7 +33,7 @@ export function armCommandInput(c,lane,definitions){
     // explicitly writes1 for every listed enemy.
     const originalMonsterId=party?null:c.enemies?1:monster?.id??1;
     return{...a,actorId,group:party?-1:a.group,present:true,roster:true,dead:!!(rawStatus&1),excluded:!!(rawFlags&0x2000),definitionId:party?null:definitionId,originalMonsterId,
-      rawStatus,rawFlags,statusKinds:word(a.statusKindsBytes),weapon:[0,0,10,0],weaponMetalBonus:party&&(c.partyWeaponPresent??1)>0&&!!((c.partyWeaponProperty0??0)&16),charm:[0,0,0],job:party?(c.job??0):0,equipmentReflect:!!raw.equipmentReflect,counterSkill:!!raw.counterSkill,weaponWide:(raw.weaponBits??raw.weaponWide??0)&3,doubleHitWeapon:!!raw.doubleHitWeapon,extraHitSkill:!!raw.extraHitSkill,
+      rawStatus,rawFlags,statusKinds:word(a.statusKindsBytes),weapon:[Number(party&&c.partyWeaponProperty0!==undefined&&(c.partyWeaponPresent??1)>0),0,10,0],weaponSpeciesTenths:party&&c.partyWeaponProperty0!==undefined?weaponSpeciesTenthsFromWords([c.partyWeaponProperty8??0,c.partyWeaponPropertyC??0,c.partyWeaponProperty10??0]):Array(12).fill(10),weaponMetalBonus:party&&(c.partyWeaponPresent??1)>0&&!!((c.partyWeaponProperty0??0)&16),weaponClearGuard:party&&(c.partyWeaponPresent??1)>0&&!!((c.partyWeaponProperty0??0)&32),weaponAlwaysOne:party&&(c.partyWeaponPresent??1)>0&&!!((c.partyWeaponProperty0??0)&1024),charm:[0,0,0],job:party?(c.job??0):0,equipmentReflect:!!raw.equipmentReflect,counterSkill:!!raw.counterSkill,weaponWide:(raw.weaponBits??raw.weaponWide??0)&3,doubleHitWeapon:!!raw.doubleHitWeapon,extraHitSkill:!!raw.extraHitSkill,
       coverById:raw.coverById??-1,coverTargetId:raw.coverTargetId??-1,ai:{cursor:0,alternate:!!(a.state3c&1),revengeId:a.history[0],previousId:a.history[1],previousTargetCount:0,previousTargets:Array(8).fill(-1)},commands:[]};
   });
   const listed=c.targetId??(projected.sourceId<4?192:0);

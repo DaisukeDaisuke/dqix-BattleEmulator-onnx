@@ -7,13 +7,14 @@ export const COMMON_MODIFIER_CREATION_RULES=Object.freeze([
   {operation:62,field:'iceShield',duration:5,blockedStatusBit:17,clears:'fireShield',source:'matching021e0f30 /02088c54 /02088c74',originalAddress:'0x021e17c8'},
   {operation:31,field:'spellReflection',duration:5,source:'matching021de678 /020888e0 /020888f4',originalAddress:'0x021def10'},
   {operation:64,field:'ailmentResistanceUp',duration:5,clears:'ailmentResistanceDown',source:'matching021e1120 /02088cb8 /02088ccc',originalAddress:'0x021e19b8'},
-  {operation:65,field:'ailmentResistanceDown',duration:5,clears:'ailmentResistanceUp',source:'matching021e1218 /02088d10 /02088d24',originalAddress:'0x021e1ab0'}
+  {operation:65,field:'ailmentResistanceDown',duration:5,clears:'ailmentResistanceUp',source:'matching021e1218 /02088d10 /02088d24',originalAddress:'0x021e1ab0'},
+  {operation:16,field:'silence',duration:6,source:'matching021dced0 /02088890 /020888a4',originalAddress:'0x021dd77c'}
 ].map(Object.freeze));
 
 // Mutate graph-value arrays, never host numerical actor state. The common
 // target-effect module supplies the original operationHit and raw status.
 export function applyCommonModifierCreation(g,state,{operation,parameter,hit,present}){
-  const forceRule=COMMON_MODIFIER_RULES[4],forceFamily=g.and(g.eq(operation,46),g.ge(parameter,1),g.le(parameter,5),g.eq(parameter,g.floor(parameter))),shieldFamily=g.or(g.eq(operation,61),g.eq(operation,62)),otherFamily=g.or(...[31,64,65].map(id=>g.eq(operation,id))),supported=g.or(forceFamily,shieldFamily,otherFamily),living=g.and(present,g.eq(commonRawBit(g,state.rawStatusBytes,0),0)),force=g.and(hit,living,forceFamily);
+  const forceRule=COMMON_MODIFIER_RULES[4],forceFamily=g.and(g.eq(operation,46),g.ge(parameter,1),g.le(parameter,5),g.eq(parameter,g.floor(parameter))),shieldFamily=g.or(g.eq(operation,61),g.eq(operation,62)),otherFamily=g.or(...[16,31,64,65].map(id=>g.eq(operation,id))),supported=g.or(forceFamily,shieldFamily,otherFamily),living=g.and(present,g.eq(commonRawBit(g,state.rawStatusBytes,0),0)),force=g.and(hit,living,forceFamily);
   commonRawOverlay(g,state.rawFlagsBytes,forceRule.bit,g.where(force,1,commonRawBit(g,state.rawFlagsBytes,forceRule.bit)));
   for(let i=0;i<forceRule.kindBits.length;i++)commonRawOverlay(g,state.statusKindsBytes,forceRule.kindBits[i],g.where(force,commonRawBit(g,[parameter],i),commonRawBit(g,state.statusKindsBytes,forceRule.kindBits[i])));
   state.rawTimers[forceRule.timerIndex]=g.where(force,5,state.rawTimers[forceRule.timerIndex]);state.rawTimers[forceRule.timerIndex+1]=g.where(force,0,state.rawTimers[forceRule.timerIndex+1]);
@@ -24,10 +25,10 @@ export function applyCommonModifierCreation(g,state,{operation,parameter,hit,pre
     state.rawTimers[rule.timerIndex]=g.where(gate,5,state.rawTimers[rule.timerIndex]);state.rawTimers[rule.timerIndex+1]=g.where(gate,0,state.rawTimers[rule.timerIndex+1]);
     clearCommonModifier(g,state,COMMON_MODIFIER_RULES[opposite],gate);applied.push(gate);
   }
-  for(const[index,operationId,opposite]of[[5,31],[6,64,7],[7,65,6]]){
+  for(const[index,operationId,opposite]of[[5,31],[6,64,7],[7,65,6],[8,16]]){
     const rule=COMMON_MODIFIER_RULES[index],gate=g.and(hit,living,g.eq(operation,operationId));
     commonRawOverlay(g,state[rule.flag],rule.bit,g.where(gate,1,commonRawBit(g,state[rule.flag],rule.bit)));
-    state.rawTimers[rule.timerIndex]=g.where(gate,5,state.rawTimers[rule.timerIndex]);state.rawTimers[rule.timerIndex+1]=g.where(gate,0,state.rawTimers[rule.timerIndex+1]);
+    state.rawTimers[rule.timerIndex]=g.where(gate,operationId===16?6:5,state.rawTimers[rule.timerIndex]);state.rawTimers[rule.timerIndex+1]=g.where(gate,0,state.rawTimers[rule.timerIndex+1]);
     if(opposite!==undefined)clearCommonModifier(g,state,COMMON_MODIFIER_RULES[opposite],gate);applied.push(gate);
   }
   return{supported,applied:g.or(...applied)};
