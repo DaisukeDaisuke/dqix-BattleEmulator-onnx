@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {BATTLE_DEFINITIONS} from '../data/common-battle.mjs';
+import {commonPresentationArmInput} from './verify-common-presentation-rom.mjs';
+import {createCommonBattleRunner} from '../runtime/common-battle.mjs';
+import {createCommonPresentationRunner} from '../runtime/common-presentation.mjs';
+import {createCommonPresentationFrameRunner,COMMON_PRESENTATION_FRAME_MODELS} from '../runtime/common-presentation-frame.mjs';
+import {createGraphExecutor} from '../web/graph-executor.mjs';
+import {loadLocalOrt} from './verify-common-battle.mjs';
+import * as windows from '../graph-v2/build-common-message-window.mjs';
+import * as controllers from '../graph-v2/build-common-message-controller.mjs';
+import * as scheduler from '../graph-v2/build-common-presentation-scheduler.mjs';
+import * as finish from '../graph-v2/build-common-presentation-finish.mjs';
+import {buildCommonPresentationGate} from '../graph-v2/build-common-presentation-gate.mjs';
+import {buildCommonFacing} from '../graph-v2/build-common-facing.mjs';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),hash=x=>createHash('sha256').update(x).digest('hex'),seed=x=>'0x'+[...x].reverse().map(v=>v.toString(16).padStart(2,'0')).join(''),words=x=>Array.from({length:x.length/2},(_,i)=>x[2*i]+65536*x[2*i+1]);
+export async function verifyCommonPresentationFrame({sourcePath,ortDirectory,maxCases=2,maxFrames=256}={}){
+ const bytes=await readFile(sourcePath),source=JSON.parse(bytes);if(!source.programUnmodified||source.results.some(r=>!r.ok||!r.strictInitializedMemory))throw Error('Original strict natural-frame evidence required');
+ const programPath=resolve(root,'graph-v2/common-battle-program.json'),program=JSON.parse(await readFile(programPath)),models=new Map();
+ for(const m of program.modules){const onnx=await readFile(resolve(dirname(programPath),m.onnx)),ir=JSON.parse(await readFile(resolve(dirname(programPath),m.ir)));if(hash(onnx)!==m.sha256)throw Error('Program model mismatch '+m.name);models.set(m.name,{name:m.name,onnx,ir,executionProvider:ir.schema==='dq9-cpu-double-graph-ir-v1'?'wasm-explicit-cpu':undefined});}
+ const builders=[windows.buildCommonMessageWindowBegin,windows.buildCommonMessageFontStep,windows.buildCommonMessageConsumeStep,controllers.buildCommonMessageQueue,controllers.buildCommonMessageController,controllers.buildCommonStartMessages,controllers.buildCommonFrameAdmissionState,controllers.buildCommonPresentationDelayCommit,scheduler.buildCommonPresentationCompletion,scheduler.buildCommonPresentationDelay,scheduler.buildCommonCameraReadiness,scheduler.buildCommonWorldCameraDispatch,scheduler.buildCommonPresentationControllerWait,scheduler.buildCommonEmptyScriptTick,finish.buildCommonSceneFinish,finish.buildCommonScriptCleanup,finish.buildCommonTurnCleanup,finish.buildCommonPresentationTail,buildCommonPresentationGate,buildCommonFacing];
+ for(const build of builders){const g=await build();models.set(g.name,{name:g.name,onnx:g.model(),ir:g.json()});}
+ for(const name of COMMON_PRESENTATION_FRAME_MODELS)if(!models.has(name)){const onnx=await readFile(resolve(root,'graph-v2',name+'.onnx')),ir=JSON.parse(await readFile(resolve(root,'graph-v2',name+'.json')));models.set(name,{name,onnx,ir,executionProvider:ir.schema==='dq9-cpu-double-graph-ir-v1'?'wasm-explicit-cpu':undefined});}
+ const executor=createGraphExecutor({models,ortRuntime:await loadLocalOrt(ortDirectory),backend:'onnxruntime-wasm'}),providers={runGraph:executor.runGraph,runDoubleGraph:executor.runGraph,getModel:async name=>models.get(name)?.ir},numeric=await createCommonBattleRunner({...providers,program,definitions:BATTLE_DEFINITIONS,presentationRunner:createCommonPresentationRunner({definitions:BATTLE_DEFINITIONS})});
+ const report={schema:'dq9-common-natural-frame-verification-v1',source:resolve(sourcePath),sourceSHA256:hash(bytes),romSHA256:source.romSHA256,backend:'onnxruntime-wasm',cases:[],fieldsCompared:0,mismatches:0,examples:[],modelSHA256:Object.fromEntries([...models].map(([name,m])=>[name,hash(m.onnx)])),scope:'Shared numerical turn and computed record arena, then common ONNX admission/resource/message/state6/script/cleanup/world-camera/font component order. Only the original request inputs and immutable assets initialize the run. Original after-states are comparison targets only. Physical renderer and hardware timing remain excluded.'};
+ const compare=(id,field,want,got)=>{want=Array.isArray(want)?want:[want];got=Array.isArray(got)?got:[got];for(let i=0;i<want.length;i++){report.fieldsCompared++;if(want[i]!==got[i]){report.mismatches++;if(report.examples.length<40)report.examples.push({id,field,index:i,want:want[i],actual:got[i]});}}};
+ try{for(const original of source.results.slice(0,maxCases)){
+   const c=original.case,{row}=commonPresentationArmInput(c);row.camera.initial.initialCameraFlagsU16=[8,0];const result=await numeric.run({rows:[row],maxTurns:1,maxTransitions:100000});const computed=result.rows[0];if(!computed.camera.arena?.complete)throw Error('Computed arena not complete');
+   const initial={contract:'dq9-empty-script-static-font-functional-frame-v1',initialLayout:'zero-unless-supplied-v1',worldDispatchStackAbi:'jpn-component-world-dispatch-v1',stackAbi:{...row.camera.initial.stackAbi,sceneBaseU16:[0,0x237],firstAdmissionTail:'jpn-empty-actor-effects-direct-first-v1'},mainState:c.initialMainState,deltaTicks:c.deltaTicks,frameTicks:c.frameTicks,assets:{'actmsg.nat':{hex:c.messageFileHex,byteLength:c.messageFileHex.length/2}},fontTables:c.initialFontTables,namesById:{0:'',1:'',2:'',3:'',192:''},actors:Object.fromEntries([0,1,2,3,192].map(id=>[id,{present:true,modelPresent:id===0||id===192,inheritedAlpha:0}])),audioHandle:-1,secondaryResourceIdentifier:0,soundGlobalWordU16:[0,0],outcome:computed.outcome??0};
+   const expected=new Map(original.phases.map(p=>[p.name,p])),phases=[];
+   const frame=await createCommonPresentationFrameRunner({...providers,onPhase:async({name,frame,state:s})=>{
+     const originalName=name==='admission'?(frame===0?'complete_camera_presentation_outer':null):({resource:'original_background_file_process_',ui:'original_ui_frame_',presentation:'natural_presentation_frame_','world-camera':'original_world_camera_',font:'original_font_frame_'})[name]+frame,want=expected.get(originalName);if(!want)return;
+     const id=c.id+'/'+originalName,actual={mainState:s.mainState,presentationState:s.row.presentationState,commandIndex:s.row.currentActionIndex,scriptFlags:s.row.programFlags3e8,scriptEnabled:+s.message.scriptEnabled,delay:s.scriptDelay,controllerActive:s.message.queue.active,controllerWait:s.message.phase,controllerHoldTimer:s.message.holdTimer,messageWindowActive:+s.message.window.windowActive,messageWindowState:s.message.window.windowState,messageTokenCount:s.message.window.produced,messageTokenIndex:s.message.window.index,cameraInitialized:s.row.cameraGeometry.initialized,cameraReady:s.row.cameraGeometry.camera261,cameraFollowCountdown:s.row.cameraGeometry.globals7[1],seed:seed(s.row.seed)};
+     for(const [key,value]of Object.entries(actual))if(want.schedulerState?.[key]!==undefined)compare(id,key,want.schedulerState[key],value);
+     if(want.outerState?.cameraWords160)compare(id,'camera160',want.outerState.cameraWords160,words(s.row.cameraU16));if(want.outerState?.globals7)compare(id,'globals7',want.outerState.globals7,s.row.cameraGeometry.globals7);
+     if(want.producer){for(const [field,key]of[['rawTokens','buffer1cHex'],['outputTokens','buffer18Hex']]){const raw=want.producer[key];if(typeof raw!=='string'||raw.length<640)throw Error('Original token-buffer observer is incomplete');compare(id,field,Array.from({length:160},(_,i)=>Number.parseInt(raw.slice(i*4+2,i*4+4)+raw.slice(i*4,i*4+2),16)),s.message.window[field]);}}
+     phases.push({name:originalName,...actual,markerCount:s.markerCount});
+   }});
+   const next=await frame.run({camera:computed.camera,frameInput:initial,maxFrames});report.cases.push({id:c.id,complete:next.complete,pending:next.pending??null,frames:next.state.frameNumber,nextNumericTurnReady:next.nextNumericTurnReady,finalSeed:seed(next.state.row.seed),mainState:next.state.mainState,phases});
+   compare(c.id,'naturalComplete',original.naturalTurnPresentationComplete,next.complete);compare(c.id,'frames',original.naturalFrames,next.state.frameNumber);compare(c.id,'finalSeed',original.outerFinalState.seed,seed(next.state.row.seed));
+  }report.passed=report.mismatches===0&&report.cases.every(c=>c.complete);return report;
+ }finally{await executor.release();}
+}
+if(process.argv[1]===fileURLToPath(import.meta.url)){const args=process.argv.slice(2),options={};let out;for(let i=0;i<args.length;i++){if(args[i]==='--source')options.sourcePath=args[++i];else if(args[i]==='--ort-dir')options.ortDirectory=args[++i];else if(args[i]==='--out')out=args[++i];else if(args[i]==='--max-cases')options.maxCases=Number(args[++i]);else if(args[i]==='--max-frames')options.maxFrames=Number(args[++i]);else throw Error('Unknown argument '+args[i]);}const report=await verifyCommonPresentationFrame(options);if(out)await writeFile(out,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({...report,modelSHA256:undefined,cases:report.cases.map(c=>({...c,phases:c.phases.slice(-3)}))},null,2));if(!report.passed)process.exitCode=1;}

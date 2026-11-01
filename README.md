@@ -18,8 +18,20 @@ DQ9の戦闘規則を、共有ONNXモジュールと1つの戦闘制御で実行
 1. 戦闘の入力定義を選択します。どの入力も同じ共通プログラムと同じモジュール集合を使用します。
 2. 開始seed、連続seed数、同時に実行する入力数（既定256）、最大ターン数、状態遷移の実行予算を指定します。入力数が多い場合も、全seedを順番どおりに分割して実行します。
 3. 必要に応じて編成・初期状態JSONの`actors`を編集します。行動・モンスター定義JSONも変更できます。
-4. 既定の計算範囲は「数値遷移のみ」です。カメラを接続する場合は「数値遷移と指定カメラ呼出し」を選び、`camera.initial`にvisual roster・program・呼出し開始状態・同一stackのABIを指定します。外部状態`row+4`は4個のunsigned 32bit整数として入力します。未確定値を固定値で補う処理はありません。
+4. 既定の計算範囲は「数値遷移のみ」です。「数値遷移と指定カメラ呼出し」は、計算した行動列にカメラ呼出しを接続します。「数値・メッセージ・カメラのフレーム実行」は、明示した初期状態でメッセージ待機、カメラ更新、後片付けまで進めます。
 5. 実行し、途中状態、最終状態、未実装の効果・制御、予算到達を確認します。全結果JSONに入力・定義・実行条件・共通プログラムSHA-256・モジュールSHA-256を収録します。
+
+フレーム実行を試す場合は、入力一覧の**「共通戦闘 → メッセージ・カメラのフレーム実行」**を選び、日本版のローカルNDS ROMをファイル欄で選択します。最初は最大ターン数1で実行してください。HTMLはROMのファイル表を読み、`data/prm/actmsg.nat`と`data/pack_lv5/font_lv5.gp2`からメッセージと4種類の静的フォントを取り出します。必要なデータは元のARM実行と照合したハッシュで確認します。ROMと抽出データをサーバーへ送る処理はありません。公開HTMLや生成元ソースにも、これらのROMファイルの内容は同梱しません。読み込みの実装は[`runtime/common-rom-assets.mjs`](runtime/common-rom-assets.mjs)です。
+
+この入力例は、空の演出スクリプトと明示した静的リソース状態を扱います。`camera.frameInput`のフレーム差分から実際の待機・完了条件を計算し、終点のフレーム番号を入力しません。`frameSummary`に実行フレーム数、行動数、元の制御状態を記録します。状態7は**次のコマンド入力を受け付ける境界**であり、ゲーム内のメニュー操作やオーバーレイ読み込みを完了したという意味ではありません。描画装置や実機の時間経過は、この機能的なコンポーネント順序の検証範囲に含みません。
+
+カメラの開始条件は`camera.initial`の編成・プログラム・カメラ状態と`stackAbi`で指定します。初回の外部状態`row+4`は4個のunsigned 32bit整数です。以後の値は、実行したカメラ・メッセージ処理と元の呼出し位置に対応したstackの規則から導出します。入力例の初期条件は[`data/common-functional-frame-example.mjs`](data/common-functional-frame-example.mjs)にあり、期待される最終seedや観測済みの中間行動列を含みません。
+
+停止と予算到達では、完了した入力とフレーム状態を残します。フレームの途中で停止した場合は、その直前に完了したフレームへ戻して保存します。`camera.frameState`は[`createCommonPresentationFrameRunner`](runtime/common-presentation-frame.mjs)の`run({state, maxFrames})`へ渡して再開できます。公開ランタイムの検証では8フレーム後の途中停止でその状態が完全に保持され、再開後も元のROMと同じ152フレームの終点と乱数状態に達することを確認しています。
+
+フレーム処理が完了すると、結果欄の**「保持した状態から次のコマンドを実行」**を開けます。`actorId`と`commands`を指定して**「次の数値ターン」**を実行すると、直前の全入力の乱数・HP/MP・状態を保持し、指定した味方のコマンドだけを次の入力へ反映します。この操作は[`runNumericTurn()`](runtime/common-battle.mjs)を使用し、次の数値ターンの終了から演出開始前の境界で停止します。前のカメラ状態も残ります。次の演出の初期化が未完了の間は、さらに数値ターンを進めることはできません。
+
+停止状態はJSONへ保存して読み戻せる配列・オブジェクトで保持します。検証では8フレームの停止状態を実際にJSONへ変換して読み戻し、同じ終点へ再開できることも確認しています。
 
 標準経路は**ONNX Runtime Web 1.31.1のWASM実行**です。JSとWASMは同じバージョンをjsDelivrから読み込みます。モデル・定義データ・共通ランタイムはHTMLに含みます。
 [旧ONNX.jsの公式リポジトリー](https://github.com/microsoft/onnxjs)はONNX Runtime Webへの移行を案内しています。本PoCは[公式のWebGPU経路](https://onnxruntime.ai/docs/tutorials/web/ep-webgpu.html)を使い、実際に検証したバージョンを固定します。
@@ -49,13 +61,24 @@ DQ9の戦闘規則を、共有ONNXモジュールと1つの戦闘制御で実行
 実行予算に達した戦闘は継続中の状態として残します。未実装の効果や制御は、その入力・行動・不足した処理とともに報告し、通常の拒否、勝利、敗北に置き換えません。データ表の取り込み、グラフの生成成功、単体カメラ処理の一致だけで、戦闘全体の完成とはしません。
 カメラの単体検査もHTMLに保持しています。これらは共有カメラモジュールを検査するための入力であり、ボス別の戦闘プログラムではありません。カメラの外部状態・接続範囲は個別の結果に記録します。
 
-[`runtime/common-presentation.mjs`](runtime/common-presentation.mjs)は、数値処理が生成した行動記録を共有カメラへ渡し、乱数・world・カメラメモリー・導出した次の`row+4`を各呼出しへ引き継ぎます。観測済みの中間行動列を初期入力として与える経路はありません。現在のvisual rosterは最大4体、演出行動はROMのコマンド領域に合わせて最大72件です。数値側の編成上限は味方4人・敵8体・敵グループ3組で、カメラ側の制限と区別しています。非同期の補助イベントと次の数値ターンへの復帰が未解決なら、`projectionComplete`と`wholeCameraComplete`を分けて報告します。`complete`は要求した処理範囲の完了を表し、`wholeBattleComplete`とは区別します。
+[`runtime/common-presentation.mjs`](runtime/common-presentation.mjs)は、数値処理が生成した行動記録から、コマンド・対象・ダメージ・メッセージの共有記録を構築します。観測済みの中間行動列を初期入力として与える経路はありません。指定カメラ呼出しは`projectionComplete`で結果を表し、機能的なフレーム進行は[`runtime/common-functional-presentation.mjs`](runtime/common-functional-presentation.mjs)から[`runtime/common-presentation-frame.mjs`](runtime/common-presentation-frame.mjs)へ接続します。後者は、演出前の計算済み状態から開始し、別途カメラ投影を実行してその終点を使うことはありません。
+
+現在のカメラ計画・実行APIのvisual rosterは最大4体、演出行動はROMのコマンド領域に合わせて最大72件です。数値側の編成上限は味方4人・敵8体・敵グループ3組です。12体を扱うカメラ前処理の単体検証は、計画からフレーム終了までの全APIが12体へ拡張された証拠とは区別します。
+
+元のROMを同じ初期入力から実行した2seedの比較で、計6行動・304フレームの機能的な演出進行が一致しました。公開入力例、ローカルROM抽出、生成済みの共通モデル一覧を使う統合検証では210,642項目、不一致0でした。別の観測を加えた1seedの比較では、メッセージの入力・出力バッファを含む299,883項目が一致しました。双方とも、元の途中結果は比較対象だけに使用します。独立した検証入口は[`scripts/verify-common-presentation-frame.mjs`](scripts/verify-common-presentation-frame.mjs)と[`scripts/verify-common-functional-presentation.mjs`](scripts/verify-common-functional-presentation.mjs)です。
+
+続く数値ターンも、元のROMの同じメモリーを保持したまま、明示した次のコマンドと実際の乱数スナップショット処理を通して比較しています。実際の初回ターン開始処理を含む2ケースで936項目が一致し、次の数値ターン終了時の乱数位置は105と110でした。比較対象は味方・敵の表現済み状態、AI進捗、乱数とその位置、保持したフレーム状態です。次の演出を処理せずにさらに数値ターンを要求した場合は、乱数・状態を変更せず、グラフ呼出し0回で境界を報告することも確認しています。これは明示したコマンド入力からの継続で、ゲーム内メニューや次の演出初期化の実行証拠ではありません。
+
+この証拠の対象は、実データを使うメモリーファイル、静的フォント、空の演出スクリプト、明示したリソース・描画状態でのUI→演出→カメラ→フォント処理です。一般の演出命令、動的フォント・アニメーション資源、追加イベント、物理的な非同期時間は、必要になった入力で未実装の理由を報告します。`complete`は指定した境界までの処理完了を表します。戦闘終了、メニュー完了、描画装置を含む世界全体の完了は、それぞれ別の状態です。
 
 ターン末尾のHP・MP回復と非致死の毒は、数値の要求量と実際の変化量を分け、元の処理がグループ間で保持するフラグ、演出コマンド、ダメージ記録の値、メッセージIDを生成します。味方4体・敵8体を含む15件の独立したROM実行では、2,292項目が一致しました。この検証は数値と記録内容を対象とし、ポインターを含む演出領域全体や非同期処理の完了を検証したものではありません。
 
 AI対象callbackも共有グラフへ合成します。[`graph-v2/common-target-callbacks.mjs`](graph-v2/common-target-callbacks.mjs)のcallback72は、怒りの対象または味方候補から守備力と守備力段階を検査し、元の重み付き反復抽選へ渡します。callback159は、ROMにある`object.enemyType == 314`とsigned `stats+0x2c <= 0`の条件を入力状態に適用します。このobject IDは現在のAI定義IDと独立して保持します。これらの条件は別の戦闘プログラムを選択しません。
 「かばう」はAIの対象選択、共有乱数の抽選後の被弾先変更、連続攻撃中の対象再選択を共通処理へ接続しています。反射・反撃の対象変更と追加会心判定も、共有の命令処理として接続しています。フォース、炎・氷・魔法・息の耐性効果は、付与と持続・解除の順序を共有します。麻痺の追加効果と種族・状態に応じた威力補正は、行動定義の意味と現在状態を入力します。
-反射状態を作る一部の効果、刃の防御の軽減・反動、アイテム消費の呼出し側処理、補助演出などは、関係する入力に到達した時点で具体的な不足として報告します。対応状況は同じビルドが生成する`data/action-coverage.json`と実行結果で確認できます。
+
+メタル系へのダメージ補正は[`graph-v2/common-metal-damage.mjs`](graph-v2/common-metal-damage.mjs)の共通処理に統合しています。対象の種別は元の定義を読む入力属性で、実行プログラムを切り替えません。会心、テンション、最小ダメージ、武器補正と元の乱数消費順序を保持し、後処理284ケース、元の呼出し全体220ケース・51,260項目、反動を含む24ケース・5,592項目で不一致0を確認しました。これらは検証したダメージ処理と呼出しの証拠で、メタル系との全戦闘構成を網羅するという意味ではありません。
+
+刃の防御による軽減と装備の反動は、共有の効果計算と[`graph-v2/build-common-blade-recoil.mjs`](graph-v2/build-common-blade-recoil.mjs)へ接続しています。元の呼出しとの比較では、刃・反動に関する123ケース・33,237項目と、明示した戦闘条件に関する118ケース・27,494項目が一致しました。この範囲も検証した命令と呼出しに限定します。反射状態を作る一部の効果、アイテム消費の呼出し側処理、補助演出などは、関係する入力に到達した時点で具体的な不足として報告します。対応状況は同じビルドが生成する`data/action-coverage.json`と実行結果で確認できます。
 ## ソースから生成
 
 Node.js 24とPython 3.12を使用します。グラフとHTMLの生成にnpmパッケージの追加は不要です。
@@ -67,6 +90,8 @@ python scripts/validate_release.py dist
 公開ソースからONNX、グラフIR、共通実行定義、入力データ、単一HTMLを新規生成します。ROM本体、個人の絶対パス、Ghidraプロジェクト、過去の生成モデル、一時的なデバッグJSONをビルドの必須入力にしません。原資料のハッシュは`data/source-authority.mjs`に、必要な数値定数は公開データに保持します。
 `dist/release-manifest.json`は全成果物のパス、サイズ、SHA-256、生成元コミットを記録します。検証スクリプトは未宣言ファイルを拒否し、共通プログラムの同一性と全ONNXの公式checker full checkを確認します。`--reuse-generated`はローカルの再梱包用で、CIは常にソースから生成します。
 
+[GitHub Actions](.github/workflows/convert-release.yml)では、ソースからの生成、成果物の整合性、公式ONNX checkerを実行します。実際のORT実行、ブラウザー操作、元のROMとの一致は、下記の検証入口と個別に保管した実行証拠で確認します。構造検証の成功だけで、元のゲームの全動作が正しいとは判定しません。
+
 ## ローカルの実行検証
 
 既存のONNX Runtime Web 1.31.1配布ディレクトリーを`ORT_RUNTIME_DIR`へ指定すると、追加ダウンロードなしで共通プログラムを検証できます。
@@ -76,6 +101,7 @@ node scripts/verify-common-battle.mjs --ort-dir "$ORT_RUNTIME_DIR"
 node scripts/verify-native-f32-division.mjs --ort-dir "$ORT_RUNTIME_DIR"
 node scripts/verify-common-target-callbacks.mjs --ort-dir "$ORT_RUNTIME_DIR" --source strict-arm-target-response.json
 node scripts/verify-common-battle-rom.mjs --ort-dir "$ORT_RUNTIME_DIR" --records projected-turn-records.json --source-root /path/to/private-evidence
+node scripts/verify-common-functional-presentation.mjs --ort-dir "$ORT_RUNTIME_DIR" --rom /path/to/local-dq9.nds --source natural-component-complete-response.json --out functional-verification.json
 ```
 
 最初の検証は単独入力とバッチ、AI定義IDの付け替え、明示した実行予算、スカラー実行器との一致を確認します。2番目は単精度除算をORTと2種類のスカラー実行器で照合します。最後の2つは別途保管した厳密なARM実行証拠を読み、初期入力だけから計算した結果と照合します。多ターン証拠では各途中ターンまでを初期状態から再実行し、期待される途中結果を次の入力に流用しません。入力証拠・モデル・共通プログラム・ランタイムのハッシュを結果に記録します。証拠JSONやROMは公開ビルドの依存物に含めません。

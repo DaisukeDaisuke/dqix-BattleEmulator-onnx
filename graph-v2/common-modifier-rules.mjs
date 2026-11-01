@@ -5,7 +5,10 @@ export const COMMON_MODIFIER_RULES=Object.freeze([
   {field:'breathBarrier',timerIndex:2,durationOffset:0x75,recoveryOffset:0x98,flag:'rawStatusBytes',bit:17,rank:7,thresholds:[100,88,75,63],steps:4},
   {field:'fireShield',timerIndex:4,durationOffset:0x6c,recoveryOffset:0x8f,flag:'rawFlagsBytes',bit:1,thresholds:[100,88,75,63],steps:4},
   {field:'iceShield',timerIndex:6,durationOffset:0x6d,recoveryOffset:0x90,flag:'rawFlagsBytes',bit:2,thresholds:[100,88,75,63],steps:4},
-  {field:'force',timerIndex:8,durationOffset:0x6a,recoveryOffset:0x8d,flag:'rawFlagsBytes',bit:7,kindBits:[9,10,11],thresholds:[100,88,63,38],steps:4}
+  {field:'force',timerIndex:8,durationOffset:0x6a,recoveryOffset:0x8d,flag:'rawFlagsBytes',bit:7,kindBits:[9,10,11],thresholds:[100,88,63,38],steps:4},
+  {field:'spellReflection',timerIndex:10,durationOffset:0x61,recoveryOffset:0x84,flag:'rawStatusBytes',bit:9,thresholds:[100,88,75,63],steps:4},
+  {field:'ailmentResistanceUp',timerIndex:12,durationOffset:0x6b,recoveryOffset:0x8e,flag:'rawFlagsBytes',bit:3,thresholds:[100,88,75,63],steps:4},
+  {field:'ailmentResistanceDown',timerIndex:14,durationOffset:0x7b,recoveryOffset:0x9e,flag:'rawFlagsBytes',bit:4,thresholds:[100,88,75,63],steps:4}
 ].map(Object.freeze));
 export const COMMON_RAW_TIMER_FIELDS=Object.freeze(COMMON_MODIFIER_RULES.flatMap(({field})=>[field+'Duration',field+'Recovery']));
 export const COMMON_RAW_TIMER_OFFSETS=Object.freeze(COMMON_MODIFIER_RULES.flatMap(({durationOffset,recoveryOffset})=>[durationOffset,recoveryOffset]));

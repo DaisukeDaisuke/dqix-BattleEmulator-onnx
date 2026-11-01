@@ -17,9 +17,22 @@ export function armCommandInput(c,lane,definitions){
   const projected=commonArmActorTableInput(c),rawActors=c.enemies?[c.actors[0],...c.enemies]:c.actors;
   const actors=projected.actors.map((a,i)=>{
     const actorId=a.initialActor.id,party=a.initialActor.party!==0,raw=rawActors[i],rawStatus=word(a.rawStatusBytes),rawFlags=word(a.rawFlagsBytes),definitionId=65000+lane*8+i;
-    if(!party)definitions.monsters[definitionId]={id:definitionId,actions:[1,1,1,1,1,1],scheme:0,judgment:0,limitedSlots:0,flags:0,otherAngerChances:a.otherAngerChances};
-    return{...a,actorId,group:party?-1:a.group,present:true,roster:true,dead:!!(rawStatus&1),excluded:!!(rawFlags&0x2000),definitionId:party?null:definitionId,originalMonsterId:party?null:definitionId,
-      rawStatus,rawFlags,statusKinds:word(a.statusKindsBytes),weapon:[0,0,10,0],charm:[0,0,0],job:party?(c.job??0):0,equipmentReflect:!!raw.equipmentReflect,counterSkill:!!raw.counterSkill,weaponWide:(raw.weaponBits??raw.weaponWide??0)&3,doubleHitWeapon:!!raw.doubleHitWeapon,extraHitSkill:!!raw.extraHitSkill,
+    const suppliedRecord=party?null:(raw.monsterRaw??(i===1?c.monsterRaw:null)),monster=suppliedRecord?Object.values(definitions.monsters).find(m=>m.raw===suppliedRecord):null;
+    if(suppliedRecord&&!monster)throw Error('A supplied original monster record must resolve to the immutable definition table');
+    if(monster){
+      for(const key of['dodgeRate','guardRate']){a.initialActor[key]=monster[key];a.actor[ACTOR_FIELDS.indexOf(key)]=monster[key];}
+      a.config=[...monster.config];a.otherAngerChances=[...monster.otherAngerChances];
+    }
+    const suppliedAux=party?null:(raw.monsterAuxRaw??(i===1?c.monsterAuxRaw:null));
+    if(suppliedAux){const flags=Buffer.from(suppliedAux,'hex').readUInt16LE(10);a.metal=!!(flags&0x1000);a.species=flags>>>7&15;}
+    if(!party)definitions.monsters[definitionId]={id:definitionId,actions:[1,1,1,1,1,1],scheme:0,judgment:0,limitedSlots:0,flags:monster?.flags??raw.definitionFlags??c.enemyDefinitionFlags??0,otherAngerChances:a.otherAngerChances};
+    // Definition keys isolate each fixture's input table. They are not the
+    // original object's halfword2: the base initializer writes monster1,
+    // optionally replaced by monsterRaw, and the expanded enemy initializer
+    // explicitly writes1 for every listed enemy.
+    const originalMonsterId=party?null:c.enemies?1:monster?.id??1;
+    return{...a,actorId,group:party?-1:a.group,present:true,roster:true,dead:!!(rawStatus&1),excluded:!!(rawFlags&0x2000),definitionId:party?null:definitionId,originalMonsterId,
+      rawStatus,rawFlags,statusKinds:word(a.statusKindsBytes),weapon:[0,0,10,0],weaponMetalBonus:party&&(c.partyWeaponPresent??1)>0&&!!((c.partyWeaponProperty0??0)&16),charm:[0,0,0],job:party?(c.job??0):0,equipmentReflect:!!raw.equipmentReflect,counterSkill:!!raw.counterSkill,weaponWide:(raw.weaponBits??raw.weaponWide??0)&3,doubleHitWeapon:!!raw.doubleHitWeapon,extraHitSkill:!!raw.extraHitSkill,
       coverById:raw.coverById??-1,coverTargetId:raw.coverTargetId??-1,ai:{cursor:0,alternate:!!(a.state3c&1),revengeId:a.history[0],previousId:a.history[1],previousTargetCount:0,previousTargets:Array(8).fill(-1)},commands:[]};
   });
   const listed=c.targetId??(projected.sourceId<4?192:0);

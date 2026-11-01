@@ -36,7 +36,7 @@ function initialStats(raw,{enemy=false}={}){
   return bytes;
 }
 
-function projectActor(bytes,base){
+export function projectActor(bytes,base){
   const actor=[...base.actor],put=(name,value)=>actor[index[name]]=value;
   const rawStatus=bytes.readUInt32LE(0x14),rawFlags=bytes.readUInt32LE(0x18),rawRanks=signedRanks(bytes.readUInt32LE(0x58));
   for(const[name,offset]of [['hp',0],['mp',2],['maxHp',4],['maxMp',6]])put(name,bytes.readUInt16LE(offset));
@@ -63,7 +63,7 @@ function definitionsFromInitial(c){
     bytes.writeUInt32LE(((bytes.readUInt32LE(0x10)&~0x700)|(change.extraMode<<8))>>>0,0x10);bytes.writeUInt32LE(0,0x24);
     if(bytes.toString('hex')!==p.raw||p.raw!==c.allMonsterRecords[i])throw Error(c.id+': RAM definition contains unaccounted changes');
     const definition=clone(BATTLE_DEFINITIONS.monsters[p.baseId]);
-    definition.actions=[...change.actions];definition.extraActionMode=change.extraMode;definition.flags=bytes.readUInt32LE(0x10);
+    definition.raw=p.raw;definition.actions=[...change.actions];definition.extraActionMode=change.extraMode;definition.flags=bytes.readUInt32LE(0x10);
     definition.otherAngerChances=[0,0];definition.config.splice(1,3,0,0,0);monsters[definition.id]=definition;
   }
   const originals=[...rom.actions].sort((a,b)=>a.id-b.id).map(a=>a.raw);

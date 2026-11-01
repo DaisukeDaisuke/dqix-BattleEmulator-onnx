@@ -15,6 +15,7 @@ function validateInitial(row,lane){
  integer(g.counter,0,5,'cameraGeometry.counter');integer(g.mode,0,255,'cameraGeometry.mode');
  for(const name of['initialized','camera261','firstCameraFlag'])integer(g[name],0,1,`cameraGeometry.${name}`);
  for(const name of['sourceId','targetId'])integer(g[name],0,255,`cameraGeometry.${name}`);
+ if(row.initialCameraFlagsU16!==undefined)vector(row.initialCameraFlagsU16,2,0,65535,'initialCameraFlagsU16');
  vector(row.commandBaseU16,2,0,65535,'commandBaseU16');vector(row.cameraRngPointerU16,2,0,65535,'cameraRngPointerU16');
  const state=[g.counter,g.globals7[0],g.globals7[1],g.globals7[3],g.globals7[4]];
  if(!Array.isArray(row.cameraState)||state.some((x,i)=>!Object.is(x,row.cameraState[i]))||g.initialized!==+!!row.cameraInitialized)throw Error(`Lane ${lane}: camera scalar and raw-memory initial fields disagree`);

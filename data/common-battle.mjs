@@ -4,6 +4,7 @@ import encounters from '../restored/dq9-unified/data/encounters.mjs';
 import hitTables from '../restored/dq9-unified/data/hit-tables.mjs';
 import {ACTOR_FIELDS} from '../graph-v2/rules.mjs';
 import {ACTION_STATUSES} from '../graph-v2/extended-rules.mjs';
+import {COMMON_RAW_TIMER_FIELDS} from '../graph-v2/common-modifier-rules.mjs';
 import {INPUT_PRESETS} from './battle-presets.mjs';
 
 const readRaw=record=>new DataView(Uint8Array.from(record.raw.match(/../g),x=>parseInt(x,16)).buffer);
@@ -16,12 +17,12 @@ export const ACTION_DEFINITIONS=Object.fromEntries(Object.entries(firstById(rom.
     smartTarget:v.getUint16(12,true),wiseTarget:v.getUint16(14,true),
     spell:!!(a.w10&1),ability:!!(a.w10&2),coverAllowed:!!(a.w10&0x1000),magicReflectable:!!(a.w10&0x400),breathReflectable:!!(a.w10&4),counterAllowed:!!(a.w10&0x80),prepaid:!!(a.w08&0x10000000),planningCategory:(a.w18>>>12)&15,category:(w1c>>>19)&31,priority:(w2c>>>14)&63,weaponFirstEligible:!!(a.w10&0x80000),
     damageElement:(a.w08>>>22)&31,effectElement:(a.w18>>>27)&31,
-    combo:!!(w2c&(1<<27)),raw:a.raw}];
+    combo:!!(w2c&(1<<27)),afterAction:(w2c>>>10)&15,raw:a.raw}];
 }));
 export const MONSTER_DEFINITIONS=Object.fromEntries(rom.monsters.map(m=>{
   const v=readRaw(m),anger=v.getUint32(36,true),pairs=[{trigger:anger&127,chance:(anger>>>7)&127},{trigger:(anger>>>14)&127,chance:(anger>>>21)&127}];
   const chance=t=>pairs.find(p=>p.trigger===t)?.chance??0;
-  return[m.id,{id:m.id,name:m.name,hp:m.hp,mp:m.mp,attack:m.attack,defense:m.defense,agility:m.agility,
+  return[m.id,{id:m.id,name:m.name,raw:m.raw,hp:m.hp,mp:m.mp,attack:m.attack,defense:m.defense,agility:m.agility,
     scheme:m.scheme,judgment:m.judgment,actions:[...m.actions],limitedSlots:m.limitedSlots,
     extraActionMode:m.turnBehavior&7,flags:m.flags,model:m.model,modelFlags:m.modelFlags,radiusSource:m.radiusSource,
     level:m.modelFlags&127,species:(m.modelFlags>>>7)&15,metal:!!(m.modelFlags&0x1000),otherAngerChances:[chance(19),chance(20)],
@@ -72,7 +73,7 @@ function sourceActor(source,old,actorIndex,monsterId,snapshot){
     weapon:party?(snapshot?.weapon??[Number(source.equipmentPolicy?.enabled??false),c.OriginalWeaponElement??0,10,13]):[0,0,0,0],
     charm:party?(snapshot?.appeal?.slice(0,3)??[0,0,0]):[0,0,0],
     ai:{cursor:0,alternate:false,storedTransitionId:0,previousTargets:[-1,0,0,0,0,0,0,0],previousTargetCount:0},
-    rawStatus:0,rawFlags:0,rawRanks:Array(10).fill(0),rawTimers:Array(10).fill(0),auxiliaryBytes:Array(9).fill(0),magic:[0,old.HealPower??0],
+    rawStatus:0,rawFlags:0,rawRanks:Array(10).fill(0),rawTimers:Array(COMMON_RAW_TIMER_FIELDS.length).fill(0),auxiliaryBytes:Array(9).fill(0),magic:[0,old.HealPower??0],
     preparation:snapshot?.preparationState?.slice(actorIndex*5,(actorIndex+1)*5)??Array(5).fill(0),
     inventory:party?structuredClone(source.inventory??{}):{},commands:party?[{actionId:1,target:192}]:[]};
   state.initialAuthority={source:source.source,branch:source.branch,variant:source.variant,numericPreset:!!legacy,

@@ -36,6 +36,7 @@ export const COMMON_ACTOR_ABI=Object.freeze({
   rawState:COMMON_RAW_STATE_ABI,
   side:'actors.party is 1 for a party actor and 0 for an enemy; actors.id is the original actor ID, not an array index.',
   identifiers:'Actor lookup, group membership and source/target indexing are owned by the common battle state. No two-actor battle is implied by a source/target effect call.',
+  effectiveStats:'Effective attack, defense and agility are derived from their base values and represented buff ranks. Independently stale current-stat RAM values are not additional fields in this ABI; an ARM fixture must initialize the same derived state before comparing this boundary.',
   configuration:'coupAfterActionChance belongs to the acting party actor. The anger chance/min/max fields belong to the affected enemy. enemyAppealGate is a resolved actor property.',
   resistance:'Element IDs 1..22 map to columns 0..21; element 0 has identity resistance.',
   tensionState:'Stage and low/high flags are independent original state and must not be reconstructed from one another.'

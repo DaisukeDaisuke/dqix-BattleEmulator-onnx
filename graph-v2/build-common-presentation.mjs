@@ -127,6 +127,7 @@ export function buildCommonPeriodicPresentation(){
   g.output(g.cat([action,zero,targets[0],targets[0],zero,zero]),'command');g.output(g.cat(targets),'targets');g.output(count,'targetCount');g.output(g.cat(deltas),'amounts');
   const mod=(value,n)=>g.sub(value,g.mul(g.floor(g.mul(value,1/n)),n)),short=value=>{const u=mod(value,65536);return[mod(u,256),g.floor(g.mul(u,1/256))];};
   const columns=Array.from({length:actorWidth},(_,j)=>compact(Array.from({length:capacity},(_,i)=>after[i*actorWidth+j]),0)),statusColumns=[0,1].map(j=>compact(Array.from({length:capacity},(_,i)=>rawStatus[i*2+j]),0)),kindColumn=compact(kinds,0),payloads=[];
+  g.output(g.cat([columns[0][0],columns[2][0]]),'participantVitals');
   for(let i=0;i<capacity;i++){
     const payload=Array(36).fill(zero),store=(offset,values)=>values.forEach((value,j)=>payload[offset+j]=value);
     store(0,scratch.slice(i*4,i*4+4).flatMap(short));store(12,[deltas[i],columns[0][i],columns[2][i],columns[1][i],columns[3][i]].flatMap(short));store(24,[statusColumns[0][i],statusColumns[1][i]].flatMap(short));
@@ -134,7 +135,9 @@ export function buildCommonPeriodicPresentation(){
     payloads.push(...payload.map(value=>g.where(g.and(wrote,metadataInputsComplete,g.lt(i,count)),value,0)));
   }
   g.output(g.cat(scratch),'nextScratchFlagsU16');g.output(g.cat(payloads),'impactPayloadBytes');
-  g.output(g.where(poison,0,g.where(hp,g.where(g.eq(count,1),messages[0],messages[1]),g.where(g.eq(count,1),messages[2],messages[3]))),'startMessage');
+  const initialStartMessage=g.where(poison,messages[4],g.where(hp,g.where(g.eq(count,1),messages[0],messages[1]),g.where(g.eq(count,1),messages[2],messages[3])));
+  g.output(initialStartMessage,'initialStartMessage');g.output(poison,'clearStartMessageOnImpact');
+  g.output(g.where(poison,0,initialStartMessage),'startMessage');
   g.output(g.cat([g.where(poison,messages[4],0),g.where(poison,messages[5],0)]),'impactMessageIds');g.output(g.where(poison,2,0),'impactMessageCount');
   g.output(g.and(metadataInputsComplete,admitted),'metadataSupported');
   g.output(g.or(g.not(enabled),admitted),'supported');g.output(wrote,'wrote');return g;

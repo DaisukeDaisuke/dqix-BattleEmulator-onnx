@@ -14,8 +14,11 @@
 <section class="panel"><h2>実行条件</h2>
 <label for="mode">戦闘の入力定義・単体検査</label><select id="mode"></select>
 <label for="preset">初期条件</label><select id="preset"></select>
-<label for="scope-mode">計算範囲</label><select id="scope-mode"><option value="numeric-only">数値遷移のみ（カメラ乱数は未適用）</option><option value="camera-projection">数値遷移と指定カメラ呼出し</option><option value="input-camera">初期状態JSONのカメラ設定を実行</option></select>
-<p class="small">カメラを実行する場合はcamera.initialにvisual roster・program・呼出し開始状態を指定します。数値計算から生成した行動記録を使い、row+4と乱数を次の呼出しへ引き継ぎます。非同期の演出イベントや次ターンへの復帰は未完了として区別します。</p>
+<label for="scope-mode">計算範囲</label><select id="scope-mode"><option value="numeric-only">数値遷移のみ（カメラ乱数は未適用）</option><option value="camera-projection">数値遷移と指定カメラ呼出し</option><option value="functional-frame">数値・メッセージ・カメラのフレーム実行</option><option value="input-camera">初期状態JSONのカメラ設定を実行</option></select>
+<p class="small">カメラの編成・プログラム・開始状態をJSONで指定します。フレーム実行は、空の演出スクリプトと明示した静的状態で、メッセージ待機・カメラ更新・後片付けを計算します。実装範囲外の処理は途中状態と理由を残します。</p>
+<label for="rom-file">フレーム実行に使うローカルROM（日本版）</label><input id="rom-file" type="file" accept=".nds,application/octet-stream">
+<p id="rom-assets-status" class="small" role="status">未読込。フレーム実行の入力例では、ROM内のメッセージと静的フォントを使います。</p>
+<p class="small">選んだファイルはこの端末で読み込みます。ROMをサーバーへ送信しません。数値のみ・指定カメラ呼出しでは選択不要です。</p>
 <label for="backend">実行方式</label><select id="backend"><option value="onnxruntime-wasm">ONNX Runtime Web / WASM</option><option value="onnxruntime-webgpu">ONNX Runtime Web / WebGPU（検証用）</option><option value="native-wasm">検証用スカラーWASM</option></select>
 <p class="small">各方式が同じONNXを実行します。WebGPUは対応アダプターがある場合に使用でき、未対応演算をCPUへ自動で代替しません。倍精度のカメラ計算だけは明示したWASMモジュールを使います。「実行器を照合」でWASMとの結果を比較できます。</p>
 <label for="seed">開始seed（64 bit・16進数）</label><input id="seed" spellcheck="false" maxlength="18" value="0000000000000001">
@@ -41,6 +44,7 @@
 <p id="timings" class="small">初期化時間とウォームアップ時間は別に表示します。</p><p id="device" class="small">実行方式を選択してください。</p>
 <div class="scroll"><table><thead><tr><th>開始seed</th><th>現在seed</th><th>position</th><th>編成のHP / MP</th><th>状態・コンボ</th><th>結果</th></tr></thead><tbody id="rows"></tbody></table></div>
 <p id="result-note" class="small">全seedを保持し、先頭32件を表示します。</p><button id="download" class="secondary" disabled>全結果JSONを保存</button>
+<details><summary>保持した状態から次のコマンドを実行</summary><p class="small">フレーム処理が完了すると使用できます。指定した味方のcommandsだけを次の入力として適用し、乱数・HP/MP・状態を引き継ぎます。次の数値ターンを計算し、その演出開始前で停止します。</p><label for="next-commands-json">次のコマンドJSON</label><textarea id="next-commands-json" spellcheck="false" disabled>[]</textarea><button id="next-numeric" class="secondary" disabled>次の数値ターン</button></details>
 <details open><summary>未実装の効果・制御と予算到達</summary><pre id="issues">未実行</pre></details><details><summary>途中状態・行動記録</summary><pre id="trace-output">未実行</pre></details><details><summary>全出力・実行条件</summary><pre id="details">未実行</pre></details><details><summary>進行状況</summary><pre id="log">初期化待ち</pre></details>
 </section>
 </div>

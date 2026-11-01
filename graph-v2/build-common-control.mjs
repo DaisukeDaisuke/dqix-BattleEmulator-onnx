@@ -183,7 +183,7 @@ export function buildCommonPostStatus(){
     scope:'One participant after a command while battle is ongoing: unconditional shared roll, skip recovery, anger, represented buff and raw-modifier recoveries in original order, then primary and modifier duration ticks.',
     callerBoundary:'The caller updates outcome before the participant loop. enabled must be false if the outcome ended combat or the command suppresses post processing. The helper checks existence, not HP; a dead participant may still be visited in a continuing multi-actor battle.',
     preparationFields:COMMON_PREPARATION_FIELDS,rawTimerFields:COMMON_RAW_TIMER_FIELDS,modifierRules:COMMON_MODIFIER_RULES,
-    ordering:'Blind; Force; fire shield; ice shield; attack/defense/agility; magic barrier; breath barrier; double guard; double dodge; acrobat. Missing unrelated raw effect families are outside this ABI. Active recoveries consume their own bounded100 before any duration decrement.',
+    ordering:'Original statusRules.expirations order: blind; magic reflection; Force; ailment-resistance up; ailment-resistance down; fire shield; ice shield; attack/defense/agility; magic barrier; breath barrier; double guard; double dodge; acrobat. In particular weakness recovery byte9e precedes fire byte8f; memory-offset sorting is not the original execution order. Missing unrelated raw effect families are outside this ABI. Active recoveries consume their own bounded100 before any duration decrement.',
     defaults:{...common.defaults,targetValid:true,preparation:Array(COMMON_PREPARATION_FIELDS.length).fill(0),rawStatusBytes:[0,0,0,0],rawFlagBytes:[0,0,0,0],rawRanks:Array(10).fill(0),statusKindsBytes:[0,0],rawTimers:Array(COMMON_RAW_TIMER_FIELDS.length).fill(0)},
     fieldDomains:{rawTimers:COMMON_RAW_TIMER_FIELDS.map((name,i)=>({name,min:0,max:i%2?4:255,integer:true}))},
     feedback:{seed:'nextSeed',position:'nextPosition',actor:'nextActor',aux:'nextAux',status:'nextStatus',preparation:'nextPreparation',rawStatusBytes:'nextRawStatusBytes',rawFlagBytes:'nextRawFlagBytes',rawRanks:'nextRawRanks',statusKindsBytes:'nextStatusKindsBytes',rawTimers:'nextRawTimers'}});
@@ -197,7 +197,9 @@ export function buildCommonPostStatus(){
   preparation.skipKind=g.where(skipClear,0,preparation.skipKind);
   preparation.pendingRecoveryMessage=g.where(skipClear,1,preparation.pendingRecoveryMessage);
   aux=advanceAnger(g,aux,{enabled:active,targetValid,sharedRoll:shared});
-  for(const rule of [...ACTION_STATUSES,...COMMON_MODIFIER_RULES].sort((a,b)=>a.recoveryOffset-b.recoveryOffset)){
+  const recoveryOrder=new Map(statusRules.expirations.map((rule,index)=>[rule.counter,index])),recoveryRules=[...ACTION_STATUSES,...COMMON_MODIFIER_RULES];
+  for(const rule of recoveryRules)if(!recoveryOrder.has(rule.recoveryOffset))throw Error('Missing original recovery order for '+rule.field);
+  for(const rule of recoveryRules.sort((a,b)=>recoveryOrder.get(a.recoveryOffset)-recoveryOrder.get(b.recoveryOffset))){
     if(rule.timerIndex!==undefined){
       const i=rule.timerIndex+1,gate=g.and(active,g.gt(commonRawBit(g,raw[rule.flag],rule.bit),0),g.gt(raw.rawTimers[i],0)),remaining=g.max(g.sub(raw.rawTimers[i],1),0),clear=g.and(gate,g.lt(rng.bounded(gate,100),lookup(g,remaining,rule.thresholds)));
       raw.rawTimers[i]=g.where(gate,remaining,raw.rawTimers[i]);clearCommonModifier(g,raw,rule,clear);

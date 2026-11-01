@@ -10,7 +10,10 @@ const roots=[
   'web/input-validation.mjs',
   'web/graph-executor.mjs',
   'runtime/common-battle.mjs',
-  'runtime/common-presentation.mjs'
+  'runtime/common-presentation.mjs',
+  'runtime/common-presentation-frame.mjs',
+  'runtime/common-functional-presentation.mjs',
+  'runtime/common-rom-assets.mjs'
 ];
 
 function initialGraphInput(ir){
@@ -48,7 +51,7 @@ export async function buildHtml({root,out,models,commonProgram,definitions,encou
   root=resolve(root);out=resolve(out);
   if(!commonProgram?.modules?.length||!definitions||!Array.isArray(encounters)||!encounters.length)throw Error('Common battle program, definitions and encounters are required');
   const sourceHashes={},sources={},visiting=new Set();
-  for(const path of ['data/graph-inputs.mjs','data/common-battle.mjs','data/common-presentation-example.mjs'])sourceHashes[path]=hash(await readFile(join(root,path)));
+  for(const path of ['data/graph-inputs.mjs','data/common-battle.mjs','data/common-presentation-example.mjs','data/common-functional-frame-example.mjs'])sourceHashes[path]=hash(await readFile(join(root,path)));
   async function source(path){
     path=path.replaceAll('\\','/');
     if(Object.hasOwn(sources,path))return;

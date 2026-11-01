@@ -2,8 +2,9 @@
 import {createCameraEnclosingPhaseRunner,CAMERA_ENCLOSING_PHASE_MODELS} from '../graph-v2/camera-enclosing-phase-runner.mjs';
 import {cameraEnclosingGeometryInitial} from '../graph-v2/camera-enclosing-geometry-runner.mjs';
 import {createCameraRetainedMemoryRunner} from '../graph-v2/camera-retained-memory-runner.mjs';
+import {createCommonOrdinaryArenaRunner,COMMON_ORDINARY_PRESENTATION_MODELS} from './common-ordinary-presentation.mjs';
 
-export const COMMON_PRESENTATION_MODELS=[...new Set([...CAMERA_ENCLOSING_PHASE_MODELS,'rom-common-presentation-command','rom-common-periodic-presentation','rom-common-presentation-stack','rom-common-presentation-advance'])];
+export const COMMON_PRESENTATION_MODELS=[...new Set([...CAMERA_ENCLOSING_PHASE_MODELS,...COMMON_ORDINARY_PRESENTATION_MODELS,'rom-common-periodic-arena','rom-common-presentation-command','rom-common-periodic-presentation','rom-common-presentation-stack','rom-common-presentation-advance'])];
 const clone=x=>structuredClone(x),one=x=>Array.isArray(x)?x:[x];
 const seedHex=seed=>'0x'+[...seed].reverse().map(x=>x.toString(16).padStart(2,'0')).join('');
 const limbs=words=>words.flatMap(x=>[x%65536,Math.floor(x/65536)]);
@@ -12,11 +13,12 @@ const words=raw=>Array.from({length:raw.length/2},(_,i)=>raw[i*2]+65536*raw[i*2+
 export function createCommonPresentationRunner({definitions,cpuDoubleProvider='onnxruntime-wasm'}={}){
   if(!definitions?.actions)throw Error('Common presentation requires the shared action definition table');
   if(cpuDoubleProvider!=='onnxruntime-wasm')throw Error('Camera reverse polar requires explicitly selected ONNX Runtime WASM DOUBLE execution');
+  const ordinaryArena=createCommonOrdinaryArenaRunner({definitions});
   return async function present({state,records,runGraph,getModel}){
     const camera=clone(state.camera),initial=camera.initial,rawActions=Object.values(definitions.actions).map(x=>x.raw),outputs=[];
     let periodicComplete=false;
     const failed=(reason,details={})=>({complete:false,periodicComplete,seed:[...state.seed],position:state.position,camera:{...camera,complete:false,wholeCameraComplete:false,nextNumericTurnReady:false,unresolvedEffects:[{reason,...details}]},unresolvedEffects:[{reason,...details}]});
-    if(camera.mode!=='camera-projection')return failed('presentation-mode',{message:'Select numeric-only or camera-projection explicitly.'});
+    if(!['camera-projection','functional-frame'].includes(camera.mode))return failed('presentation-mode',{message:'Select numeric-only, camera-projection or functional-frame explicitly.'});
     if(!initial||typeof initial!=='object')return failed('camera-initial-state',{required:'camera.initial contains visual roster, program/resource state and initial camera fields; camera.row4Words is the correlated external four-word observation.'});
     if(Object.hasOwn(initial,'commands'))return failed('observed-command-input',{message:'Presentation commands are generated from this numerical run, never accepted as initial observations.'});
     if((initial.queuedPresentationRecords??[]).length||state.presentationExtraEvents)return failed('auxiliary-presentation-producer',{message:'An auxiliary/periodic event needs its common record producer and real event schedule.'});
@@ -30,6 +32,18 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
       const ir=await getModel(name),feed={};for(const field of ir.inputs){const v=input[field.name]??ir.contract?.defaults?.[field.name];if(v===undefined)throw Error(name+'.'+field.name+': missing computed presentation operand');feed[field.name]=one(v);}
       return(await runGraph(name,[feed]))[0];
     };
+    // The direct camera projection retains its existing admission behavior.
+    // A stricter arena boundary is reported separately, never replaced with
+    // guessed event bytes or treated as a complete frame/message producer.
+    const arenaBase=initial.presentationArenaBaseU16??initial.cameraRngPointerU16??[0,0],messagePadding=initial.presentationMessagePaddingBytes??Array(504).fill(0),
+      arena={schema:'dq9-computed-presentation-arena-v1',complete:true,baseU16:clone(arenaBase),counterFields:['commands','participants','targets','impacts','messages'],counters:[0,0,0,0,0],records:[],unresolvedEffects:[],
+        provenance:'Shared numerical outputs -> shared ordinary/periodic semantic graphs -> exact record allocations and bytes. No observed queue is accepted.',messagePaddingOrigin:initial.presentationMessagePaddingBytes?'explicit-initial-bytes':'zero-initialized-reserved-padding'};
+    camera.arena=arena;
+    const arenaFailure=(reason,details={})=>{arena.complete=false;arena.unresolvedEffects.push({reason,...details});};
+    if(!Array.isArray(arenaBase)||arenaBase.length!==2||arenaBase.some(x=>!Number.isInteger(x)||x<0||x>65535))arenaFailure('presentation-arena-base');
+    if(!Array.isArray(messagePadding)||messagePadding.length!==504||messagePadding.some(x=>!Number.isInteger(x)||x<0||x>255))arenaFailure('presentation-message-padding');
+    const appendArena=(kind,output)=>{arena.counters=[...output.nextCounters];arena.records.push({kind,commandIndex:output.commandIndex[0],participantIndex:output.participantIndex[0],
+      commandBytes:[...output.commandBytes],participantBytes:[...output.participantBytes],targetIndices:[...output.targetIndices],targetBytes:[...output.targetBytes],impactIndices:[...output.impactIndices],impactBytes:[...output.impactBytes],messageIndices:[...output.messageIndices],messageBytes:[...output.messageBytes]});};
     const commands=[];
     for(const [index,record]of records.entries()){
       if(!record.presentationBefore||!record.presentationAfter)return failed('numerical-presentation-operands',{index});
@@ -47,6 +61,10 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
         if(flagsB&224)command.flagsB=(command.flagsB&31)|(flagsB&224);
       }
       commands.push(command);
+      if(arena.complete){
+        const produced=await ordinaryArena({record,arenaBaseU16:arena.baseU16,counters:arena.counters,messagePaddingBytes:messagePadding,terminal:state.outcome!==0,partyWeaponMessage:!!initial.partyWeaponMessage,battleMode:initial.battleMode??0,runGraph,getModel});
+        if(produced.complete)appendArena('ordinary',produced.arena);else arenaFailure(produced.reason,{index,actionId:record.actionId,details:produced});
+      }
     }
     const periodicGroups=new Map();
     let periodicScratchFlags=Array(32).fill(0);
@@ -79,6 +97,13 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
         const [actionId,messageId,sourceId,,flagsA,flagsB]=out.command;
         commands.push({actionId,messageId,participants:[sourceId],targets:out.targets.slice(0,out.targetCount[0]),flagsA,flagsB,periodicGroup:groupKey,amounts:out.amounts.slice(0,out.targetCount[0]),
           periodicMetadataComplete:!!out.metadataSupported[0],startMessage:out.startMessage[0],periodicImpacts:out.metadataSupported[0]?Array.from({length:out.targetCount[0]},(_,i)=>({targetId:out.targets[i],payloadBytes:out.impactPayloadBytes.slice(i*36,i*36+36),messageIds:out.impactMessageIds.slice(0,out.impactMessageCount[0]),originalImpactSlots:2})):[]});
+        if(arena.complete){
+          if(!out.metadataSupported[0]||!out.initialStartMessage||!out.clearStartMessageOnImpact||!out.participantVitals)arenaFailure('periodic-arena-operands',{groupKey});
+          else{
+            const allocated=await call('rom-common-periodic-arena',{arenaBaseU16:arena.baseU16,counters:arena.counters,actionId:out.command[0],startMessage:out.initialStartMessage[0],clearStartMessageOnImpact:out.clearStartMessageOnImpact[0],targetCount:out.targetCount[0],targetIds:out.targets,participantVitals:out.participantVitals,impactPayloadBytes:out.impactPayloadBytes,impactMessageIds:out.impactMessageIds,impactMessageCount:out.impactMessageCount[0],messagePaddingBytes:messagePadding,enabled:true});
+            if(allocated.supported[0]&&allocated.created[0])appendArena('periodic',allocated);else arenaFailure('periodic-arena-allocation',{groupKey});
+          }
+        }
       }
     }
     periodicComplete=true;
@@ -88,6 +113,14 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
     initialRow.seed=[...state.seed];initialRow.position=[state.position];
     const actorMap=new Map(state.actors.map(a=>[a.actorId,a]));
     for(const a of initialRow.roster){const numeric=actorMap.get(a.id);if(!numeric)return failed('visual-numeric-object-lookup',{objectId:a.id});a.dead=!!numeric.dead;}
+    // The frame runner starts here, before any enclosing-camera call. The
+    // completed direct projection below is a separate explicit execution.
+    camera.projectionInitial=clone(initialRow);
+    if(camera.mode==='functional-frame'){
+      if(!arena.complete)return failed('functional-frame-arena',{unresolvedEffects:clone(arena.unresolvedEffects)});
+      return{complete:true,periodicComplete,seed:[...state.seed],position:state.position,camera:{...camera,complete:false,wholeCameraComplete:false,projectionComplete:false,nextNumericTurnReady:false,functionalFramePending:true,explicitCpuDoubleProvider:cpuDoubleProvider,
+        scope:'The numerical run has produced the exact ordinary/periodic arena and pre-admission visual state. No camera admission or frame has executed and the numerical RNG is unchanged. The qualified functional-frame runner must compute admission, messages, camera, scene/script completion and the final turn boundary before readiness is reported.'}};
+    }
     const providers={runGraph,runDoubleGraph:runGraph,getModel},first=await createCameraEnclosingPhaseRunner(providers),retained=await createCameraRetainedMemoryRunner(providers);
     let row=initialRow,priorWords=[...row4],final=null;
     for(let index=0;index<commands.length;index++){
@@ -110,6 +143,6 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
       }
     }
     return{complete:true,periodicComplete,seed:[...state.seed],position:state.position,camera:{...camera,state:final,complete:false,projectionComplete:true,wholeCameraComplete:false,nextNumericTurnReady:false,explicitCpuDoubleProvider:cpuDoubleProvider,
-      scope:'Computed numerical and grouped periodic command headers, followed by each explicitly scheduled enclosing camera call and real advance, carrying exact RNG, world, camera memory and derived same-stack row+4. There is no fixed three-command loop. Impact/message buffers, asynchronous script/resource readiness, other auxiliary event producers and return to the next numerical turn are unresolved; this result is a declared projection, not a complete battle.'}};
+      scope:'Computed numerical and grouped periodic commands, followed by each explicitly scheduled enclosing camera call and real advance, carrying exact RNG, world, camera memory and derived same-stack row+4. camera.arena independently reports exact admitted impact/message buffers, linked records and counters; camera.projectionInitial retains the pre-camera state for frame scheduling. Asynchronous script/resource readiness, other auxiliary event producers and return to the next numerical turn remain unresolved; this result is a declared projection, not a complete battle.'}};
   };
 }

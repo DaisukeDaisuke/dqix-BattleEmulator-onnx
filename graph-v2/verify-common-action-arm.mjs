@@ -21,7 +21,9 @@ const initialStats=(a={})=>{
   // initializeNormalAction leaves history zero unless statBytes supplies it;
   // smart-target fixtures use a different initializer with -1 defaults.
   b.writeInt16LE(a.angerTarget??0,0x2e);
-  for(let i=0;i<22;i++)b[0x3e+i]=a.resistances?.[i]??100;
+  // The original private initializer fills21 bytes, leaving appeal element22
+  // at its explicitly zeroed initial value unless the case supplies it.
+  for(let i=0;i<22;i++)b[0x3e+i]=a.resistances?.[i]??(i===21?0:100);
   for(const[offset,value]of Object.entries(a.statBytes??{}))b[Number(offset)]=value;return b;
 };
 export function actorFromStats(before,b){

@@ -14,15 +14,17 @@ const stringify=value=>JSON.stringify(value,(_,item)=>typeof item==='bigint'?ite
 const seedHex=value=>Array.from(value).reduce((seed,byte,index)=>seed+(BigInt(byte)<<BigInt(index*8)),0n).toString(16).padStart(16,'0');
 const seedBytes=seed=>Array.from({length:8},(_,index)=>Number(seed>>BigInt(index*8)&255n));
 const scalar=value=>Array.isArray(value)||ArrayBuffer.isView(value)?value[0]:value;
-let current,busy=false,stopRequested=false,lastResult=null;
+let current,busy=false,stopRequested=false,lastResult=null,localFrameResources=null;
 
 function status(text,kind=''){$('status').textContent=text;$('status').className='status '+kind;}
 function log(text){if($('log').textContent==='初期化待ち')$('log').textContent='';$('log').textContent+=text+'\n';$('log').scrollTop=$('log').scrollHeight;}
 async function yieldUi(){await new Promise(resolve=>setTimeout(resolve,0));}
+function canContinueNumeric(){return current?.kind==='battle'&&lastResult?.result?.rows?.length>0&&lastResult.result.rows.every(row=>row.supported&&row.requestedTurnsComplete&&!row.budgetExhausted&&!row.finished&&row.camera?.nextNumericTurnReady===true);}
 function controls(running){
   busy=running;
-  for(const id of ['mode','preset','scope-mode','backend','seed','batch','chunk','limit','transitions','warmup','trace','row4','input-json','definitions-json','reset','reset-definitions','run','compare'])$(id).disabled=running;
+  for(const id of ['mode','preset','scope-mode','rom-file','backend','seed','batch','chunk','limit','transitions','warmup','trace','row4','input-json','definitions-json','reset','reset-definitions','run','compare'])$(id).disabled=running;
   $('stop').disabled=!running;$('download').disabled=running||!lastResult;
+  $('next-numeric').disabled=running||!canContinueNumeric();$('next-commands-json').disabled=running||!canContinueNumeric();
   if(!running&&current){
     $('seed').disabled=!Object.hasOwn(current.presets[0].inputs,'seed');
     for(const id of ['scope-mode','chunk','transitions','trace','definitions-json','reset-definitions'])$(id).disabled=current.kind!=='battle';
@@ -43,10 +45,23 @@ async function moduleUrl(path){
 }
 const loadModule=async path=>import(await moduleUrl(path));
 
+async function loadLocalRom(file){
+  if(busy)throw Error('実行中はROMを変更できません。');
+  if(!file)throw Error('ローカルのNDS ROMファイルを選択してください。');
+  localFrameResources=null;controls(true);$('rom-assets-status').textContent='ROM内のメッセージと静的フォントを読み込んでいます。';
+  try{
+    const {extractCommonPresentationAssets}=await loadModule('runtime/common-rom-assets.mjs');
+    const resources=await extractCommonPresentationAssets(file);localFrameResources=resources;
+    $('rom-assets-status').textContent='読込済み: '+resources.assetManifest.gameCode+' / メッセージ1件・静的フォント4件。検証済みの原本ハッシュと一致しました。';
+    return structuredClone(resources.assetManifest);
+  }catch(error){$('rom-assets-status').textContent='読み込めません: '+String(error.message??error);throw error;}
+  finally{controls(false);}
+}
+
 function applyPreset(){
   const preset=current.presets.find(item=>item.id===$('preset').value)??current.presets[0];
   $('input-json').value=stringify(preset.inputs);
-  $('scope-mode').value=current.kind==='battle'&&preset.inputs.camera?.mode==='camera-projection'?'camera-projection':'numeric-only';
+  $('scope-mode').value=current.kind==='battle'&&['camera-projection','functional-frame'].includes(preset.inputs.camera?.mode)?preset.inputs.camera.mode:'numeric-only';
   $('seed').value=Array.isArray(preset.inputs.seed)&&preset.inputs.seed.length===8?seedHex(preset.inputs.seed):'0000000000000001';
   const row4=preset.inputs.camera?.row4Words??preset.inputs.row4Words;
   $('row4').value=Array.isArray(row4)&&row4.length===4?JSON.stringify(row4):'';
@@ -66,7 +81,7 @@ function selectMode(id){
   for(const id of ['count','elapsed','rate','differences'])$(id).textContent='—';
   $('input-progress').textContent='入力ごとの完了・未実装・予算到達・停止を実行後に表示します。';
   $('rows').replaceChildren();for(const id of ['details','trace-output','issues'])$(id).textContent='未実行';
-  $('scope-result').textContent=current.kind!=='battle'?'単体検査の計算範囲を実行後に表示します。':$('scope-mode').value==='camera-projection'?'この初期入力は数値処理とカメラ呼出しを接続します。演出の非同期完了と次ターン復帰は未完了として残します。':'既定は数値遷移のみです。カメラ乱数を適用した完全な戦闘結果にはなりません。';
+  $('scope-result').textContent=current.kind!=='battle'?'単体検査の計算範囲を実行後に表示します。':$('scope-mode').value==='functional-frame'?'この初期入力は数値処理・メッセージ待機・カメラ・後片付けを共通グラフで進めます。ローカルROMを読み込んでください。':$('scope-mode').value==='camera-projection'?'この初期入力は数値処理とカメラ呼出しを接続します。演出の非同期完了と次ターン復帰は未完了として残します。':'既定は数値遷移のみです。カメラ乱数を適用した完全な戦闘結果にはなりません。';
   status('編成と初期状態を指定してください。');controls(false);
 }
 function positiveInteger(id,label,max=Number.MAX_SAFE_INTEGER){
@@ -83,6 +98,14 @@ function readRequest(){
   const hasSeed=Object.hasOwn(input,'seed'),start=BigInt('0x'+text),row4Text=$('row4').value.trim();
   if(current.kind==='battle'&&$('scope-mode').value==='numeric-only'){input.camera??={};input.camera.mode='numeric-only';}
   if(current.kind==='battle'&&$('scope-mode').value==='camera-projection'){input.camera??={};input.camera.mode='camera-projection';}
+  if(current.kind==='battle'&&$('scope-mode').value==='functional-frame'){input.camera??={};input.camera.mode='functional-frame';}
+  let frameResources;
+  if(current.kind==='battle'&&input.camera?.mode==='functional-frame'){
+    if(input.camera.frameInput?.contract!=='dq9-empty-script-static-font-functional-frame-v1')throw Error('フレーム実行の初期入力例を選ぶか、camera.frameInputの契約と初期状態を指定してください。');
+    const inline=!!input.camera.frameInput.assets?.['actmsg.nat']&&Array.isArray(input.camera.frameInput.fontTables);
+    if(!inline&&!localFrameResources)throw Error('フレーム実行にはローカルROMのメッセージ・静的フォントが必要です。ROMファイルを選択してください。');
+    if(!inline){frameResources=localFrameResources;input.camera.frameInput.assetManifest=structuredClone(localFrameResources.assetManifest);}
+  }
   if(row4Text&&current.kind!=='graph'){
     const words=JSON.parse(row4Text);
     if(!Array.isArray(words)||words.length!==4||words.some(word=>!Number.isSafeInteger(word)||word<0||word>4294967295))throw Error('row+4は4個のunsigned 32bit整数をJSON配列で指定してください。');
@@ -91,7 +114,18 @@ function readRequest(){
   const definitions=current.kind==='battle'?JSON.parse($('definitions-json').value):null;
   if(current.kind==='battle'&&(!definitions||typeof definitions!=='object'||Array.isArray(definitions)))throw Error('定義JSONはobjectを指定してください。');
   const rows=Array.from({length:count},(_,lane)=>{const row=structuredClone(input);if(hasSeed)row.seed=seedBytes((start+BigInt(lane))&MASK64);return row;});
-  return{mode:current,rows,definitions,limit,maxTransitions,count,chunkSize,trace:$('trace').checked,warmup:$('warmup').checked,seeds:rows.map((row,lane)=>hasSeed?seedHex(row.seed):String(lane+1))};
+  return{mode:current,rows,definitions,frameResources,limit,maxTransitions,count,chunkSize,trace:$('trace').checked,warmup:$('warmup').checked,seeds:rows.map((row,lane)=>hasSeed?seedHex(row.seed):String(lane+1))};
+}
+
+function readNextNumericRequest(){
+  if(!canContinueNumeric())throw Error('自然フレームの処理が完了し、次のコマンド入力を受け付ける状態が必要です。');
+  if(lastResult.programHash!==assets.commonProgramHash)throw Error('前の結果と共通プログラムが異なります。');
+  const edits=JSON.parse($('next-commands-json').value);
+  if(!Array.isArray(edits)||!edits.length)throw Error('次のコマンドをactorIdとcommandsの配列で指定してください。');
+  const ids=new Set();for(const edit of edits){if(!Number.isInteger(edit?.actorId)||ids.has(edit.actorId)||!Array.isArray(edit.commands)||Object.keys(edit).some(key=>!['actorId','commands'].includes(key)))throw Error('次の入力には重複のないactorIdとcommandsだけを指定してください。');ids.add(edit.actorId);}
+  const rows=structuredClone(lastResult.result.rows);
+  for(const row of rows)for(const edit of edits){const actor=row.actors.find(a=>a.actorId===edit.actorId);if(!actor||!actor.actor[assets.actorFields.indexOf('party')])throw Error('次のコマンド対象は、保持した編成にいる味方actorIdを指定してください。');actor.commands=structuredClone(edit.commands);}
+  return{mode:current,rows,definitions:structuredClone(lastResult.conditions.definitions),boundary:'numeric-turn',limit:1,maxTransitions:positiveInteger('transitions','状態遷移の予算'),count:rows.length,chunkSize:positiveInteger('chunk','同時実行する入力数',65536),trace:$('trace').checked,warmup:$('warmup').checked,seeds:rows.map(row=>seedHex(row.seed)),continuationFrom:{programHash:lastResult.programHash,inputHash:lastResult.result.inputHash,completedTurns:rows.map(row=>row.completedTurns)},commandInputs:edits};
 }
 
 async function executeBattleChunks(request,run){
@@ -138,10 +172,11 @@ async function executeBackend(request,backend){
   try{
     if(request.mode.kind==='battle'){
       const {createCommonBattleRunner}=await loadModule('runtime/common-battle.mjs');
-      const {createCommonPresentationRunner}=await loadModule('runtime/common-presentation.mjs');
-      const presentationRunner=createCommonPresentationRunner({definitions:request.definitions,cpuDoubleProvider:'onnxruntime-wasm'});
+      const {createCommonFunctionalPresentationRunner}=await loadModule('runtime/common-functional-presentation.mjs');
+      const presentationRunner=createCommonFunctionalPresentationRunner({definitions:request.definitions,cpuDoubleProvider:'onnxruntime-wasm',frameResources:request.frameResources,shouldStop:()=>stopRequested,
+        onPhase:async entry=>{if(entry.name==='font'){if(entry.frame%16===0)status('演出フレーム '+format(entry.frame+1,0)+' を計算しました。');await yieldUi();}}});
       const runner=await createCommonBattleRunner({program:assets.commonProgram,definitions:request.definitions,getModel:name=>models.get(name)?.ir,runGraph:executor.runGraph,presentationRunner});
-      run=async rows=>runner.run({rows:structuredClone(rows),maxTurns:request.limit,maxTransitions:request.maxTransitions,trace:request.trace,shouldStop:()=>stopRequested,onProgress:async entry=>{if(entry?.message)log(entry.message);await yieldUi();}});
+      run=async rows=>(request.boundary==='numeric-turn'?runner.runNumericTurn:runner.run)({rows:structuredClone(rows),maxTurns:request.limit,maxTransitions:request.maxTransitions,trace:request.trace,shouldStop:()=>stopRequested,onProgress:async entry=>{if(entry?.message)log(entry.message);await yieldUi();}});
     }else if(request.mode.kind==='camera'){
       const factory=(await loadModule(request.mode.runner.path))[request.mode.runner.export];
       const runner=await factory({getModel:name=>models.get(name)?.ir,runGraph:executor.runGraph,runDoubleGraph:executor.runGraph});
@@ -158,7 +193,7 @@ async function executeBackend(request,backend){
         return{rows:output,complete:true,iterations:request.limit};
       };
     }
-    const numericOnly=request.mode.kind==='battle'&&request.rows.every(row=>row.camera?.mode==='numeric-only');
+    const numericOnly=request.mode.kind==='battle'&&(request.boundary==='numeric-turn'||request.rows.every(row=>row.camera?.mode==='numeric-only'));
     const required=request.mode.kind==='battle'?numericOnly?[...new Set(Object.values(assets.commonProgram.operations))]:assets.commonProgram.modules.map(module=>module.name):request.mode.kind==='camera'?request.mode.models:[request.mode.model.name];
     for(const name of required){if(stopRequested)break;await executor.getSession(name);await yieldUi();}
     const initializationMilliseconds=performance.now()-initialized;
@@ -214,7 +249,8 @@ function outcome(row){
 function render(request,result,comparison,other){
   const attempted=result.attemptedInputs??request.count,completed=result.completedInputs;
   $('count').textContent=format(attempted,0)+' / '+format(request.count,0);$('elapsed').textContent=format(result.elapsedMilliseconds)+' ms';
-  $('rate').textContent=completed===undefined?format(attempted*1000/result.elapsedMilliseconds,0)+' 入力/s':completed===request.count?format(completed*1000/result.elapsedMilliseconds,0)+' 入力/s':'未完了のため未算定';$('differences').textContent=comparison?format(comparison.differences,0):'未照合';
+  const rate=(completed??attempted)*1000/result.elapsedMilliseconds,rateText=rate>0&&rate<.001?rate.toExponential(2):format(rate,rate<1?3:rate<100?1:0);
+  $('rate').textContent=completed===undefined||completed===request.count?rateText+' 入力/s':'未完了のため未算定';$('differences').textContent=comparison?format(comparison.differences,0):'未照合';
   $('input-progress').textContent=completed===undefined?'単体検査 '+format(attempted,0)+'入力':`指定範囲を完了 ${format(completed,0)} ／ 未実装 ${format(result.unsupportedInputs,0)} ／ 遷移予算到達 ${format(result.transitionBudgetInputs,0)} ／ 停止 ${format(result.stoppedInputs,0)}（うち未実行 ${format(result.unstartedInputs,0)}）`;
   $('timings').textContent='初期化 '+format(result.initializationMilliseconds)+' ms ／ ウォームアップ '+format(result.warmupMilliseconds)+' ms'+(other?' ／ ORT実行 '+format(other.elapsedMilliseconds)+' ms':'');
   const adapter=result.gpuAdapterInfo,adapterLabel=adapter?[adapter.vendor,adapter.architecture,adapter.device,adapter.description].filter(Boolean).join(' / '):'';
@@ -225,17 +261,19 @@ function render(request,result,comparison,other){
     cell(tr,request.seeds[lane],true);cell(tr,seed?.length===8?seedHex(seed):'—',true);cell(tr,scalar(finalValue(row,'position')));cell(tr,actorSummary(row));cell(tr,JSON.stringify(finalValue(row,'combo')??finalValue(row,'nowstate')??finalValue(row,'nowState')??'—'));cell(tr,outcome(row));$('rows').append(tr);
   });
   const issues={complete:result.complete??null,wholeBattleComplete:result.wholeBattleComplete??null,numericOnly:result.numericOnly??null,budgetExhausted:result.budgetExhausted??null,userStopped:result.userStopped??false,unstartedInputs:result.unstartedInputs??0,unresolvedEffects:result.unresolvedEffects??[],reason:result.reason??null,unresolvedRows:result.rows.map((row,lane)=>({lane,supported:row.supported,unsupported:row.unsupported,unresolvedEffects:row.unresolvedEffects,budgetExhausted:row.budgetExhausted,stoppedBeforeExecution:row.stoppedBeforeExecution,stopReason:row.stopReason,reason:row.reason})).filter(row=>row.supported===false||row.unsupported||row.unresolvedEffects?.length||row.budgetExhausted||row.stoppedBeforeExecution||row.reason)};
-  $('issues').textContent=stringify(issues);$('trace-output').textContent=stringify({turnHistory:result.rows.map((row,lane)=>({lane,nowstate:row.nowstate??row.trace??row.history??null})),cameraHistory:result.rows.map((row,lane)=>({lane,projection:row.camera?.projection??null,projectionComplete:row.camera?.projectionComplete??null,wholeCameraComplete:row.camera?.wholeCameraComplete??null})),graphTraces:result.traces??null});
-  $('scope-result').textContent=request.mode.kind!=='battle'?'単体検査です。共通戦闘全体の完了は判定していません。':result.numericOnly?'数値遷移のみ。カメラ乱数は未適用です。completeは指定ターンの数値処理が完了したことを表し、完全な戦闘結果は意味しません。':result.wholeBattleComplete?'指定された戦闘とカメラ範囲が完了しています。':'カメラ設定を含む実行です。wholeBattleComplete=falseの間は完全な戦闘結果として扱えません。';
-  lastResult={schema:'dq9-common-battle-execution-v1',mode:request.mode.id,kind:request.mode.kind,programHash:request.mode.kind==='battle'?assets.commonProgramHash:null,moduleHashes:request.mode.kind==='battle'?Object.fromEntries(assets.commonProgram.modules.map(module=>[module.name,module.sha256])):null,conditions:{startSeed:request.seeds[0],count:request.count,chunkSize:request.chunkSize,maxTurns:request.limit,maxTransitions:request.maxTransitions,trace:request.trace,warmup:request.warmup,inputs:request.rows,definitions:request.definitions},result,comparison:comparison??null,comparisonReference:other??null,independentRomVerification:false,seedFiltering:false};
+  $('issues').textContent=stringify(issues);$('trace-output').textContent=stringify({turnHistory:result.rows.map((row,lane)=>({lane,nowstate:row.nowstate??row.trace??row.history??null})),cameraHistory:result.rows.map((row,lane)=>({lane,projection:row.camera?.projection??null,projectionComplete:row.camera?.projectionComplete??null,wholeCameraComplete:row.camera?.wholeCameraComplete??null,frameSummary:row.camera?.frameSummary??null,nextCommandInputRequired:row.camera?.nextCommandInputRequired??null,commandMenuComplete:row.camera?.commandMenuComplete??null})),graphTraces:result.traces??null});
+  const functional=result.rows.some(row=>row.camera?.mode==='functional-frame');
+  $('scope-result').textContent=request.mode.kind!=='battle'?'単体検査です。共通戦闘全体の完了は判定していません。':request.boundary==='numeric-turn'?'保持したフレーム終了状態と明示したコマンドから、次の数値ターンを実行しました。次の演出開始前で停止し、前のカメラ状態と新しい数値結果を保持しています。':result.numericOnly?'数値遷移のみ。カメラ乱数は未適用です。completeは指定ターンの数値処理が完了したことを表し、完全な戦闘結果は意味しません。':functional?'入力した空スクリプト・静的フォント・リソース状態とフレーム順序を実行しました。完了時の制御状態をframeSummaryに記録します。メニュー、描画装置、実機のフレーム時間はこの範囲に含みません。':result.wholeBattleComplete?'指定された戦闘とカメラ範囲が完了しています。':'カメラ設定を含む実行です。wholeBattleComplete=falseの間は完全な戦闘結果として扱えません。';
+  lastResult={schema:'dq9-common-battle-execution-v1',mode:request.mode.id,kind:request.mode.kind,programHash:request.mode.kind==='battle'?assets.commonProgramHash:null,moduleHashes:request.mode.kind==='battle'?Object.fromEntries(assets.commonProgram.modules.map(module=>[module.name,module.sha256])):null,conditions:{startSeed:request.seeds[0],count:request.count,chunkSize:request.chunkSize,maxTurns:request.limit,maxTransitions:request.maxTransitions,trace:request.trace,warmup:request.warmup,boundary:request.boundary??'turn',continuationFrom:request.continuationFrom??null,commandInputs:request.commandInputs??null,inputs:request.rows,definitions:request.definitions},result,comparison:comparison??null,comparisonReference:other??null,independentRomVerification:false,seedFiltering:false};
   window.DQ9Release.lastResult=lastResult;
+  if(canContinueNumeric())$('next-commands-json').value=stringify(result.rows[0].actors.filter(actor=>actor.actor[assets.actorFields.indexOf('party')]).map(actor=>({actorId:actor.actorId,commands:actor.commands})));
   $('details').textContent=stringify({...lastResult,conditions:{...lastResult.conditions,inputs:'全結果JSONに収録',definitions:request.definitions?'全結果JSONに収録':null}});
   $('result-note').textContent='指定した全'+request.count+'入力と結果を保持し、先頭32件を表示します。停止で未実行の入力は明示し、処理数と速度に含めません。';
 }
-async function execute(compare=false){
+async function execute(compare=false,continuation=false){
   if(busy)throw Error('すでに実行中です。');
   let request;
-  try{request=readRequest();}catch(error){status(String(error.message??error),'bad');throw error;}
+  try{request=continuation?readNextNumericRequest():readRequest();}catch(error){status(String(error.message??error),'bad');throw error;}
   stopRequested=false;controls(true);status('共通モジュールを初期化しています。');
   try{
     let result,comparison,reference;
@@ -257,9 +295,11 @@ for(const[kind,label]of [['battle','共通戦闘への入力'],['camera','カメ
 $('inventory').textContent=`共通戦闘プログラム1件 ／ 入力定義${assets.encounters.length}件 ／ 共有モジュール${assets.commonProgram.modules.length}件`;
 $('definitions-json').value=stringify(assets.definitions);
 $('action-coverage').textContent=stringify(assets.actionCoverage??{});
-window.DQ9Release={ready:true,assets,modes,selectMode,run:()=>execute(false),compare:()=>execute(true),stop,get busy(){return busy;},lastResult:null};
+window.DQ9Release={ready:true,assets,modes,selectMode,loadLocalRom,run:()=>execute(false),continueNumeric:()=>execute(false,true),compare:()=>execute(true),stop,get busy(){return busy;},get localAssetManifest(){return structuredClone(localFrameResources?.assetManifest??null);},lastResult:null};
 $('mode').addEventListener('change',()=>selectMode($('mode').value));$('preset').addEventListener('change',applyPreset);$('reset').addEventListener('click',applyPreset);
 $('reset-definitions').addEventListener('click',()=>{$('definitions-json').value=stringify(assets.definitions);});
 $('run').addEventListener('click',()=>execute(false).catch(()=>{}));$('compare').addEventListener('click',()=>execute(true).catch(()=>{}));$('stop').addEventListener('click',stop);
+$('rom-file').addEventListener('change',()=>loadLocalRom($('rom-file').files[0]).catch(()=>{}));
+$('next-numeric').addEventListener('click',()=>execute(false,true).catch(()=>{}));
 $('download').addEventListener('click',()=>{if(!lastResult)return;const url=URL.createObjectURL(new Blob([stringify(lastResult)+'\n'],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='dq9-common-battle-result.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),0);});
 if(!modes.length)throw Error('入力定義がありません。');selectMode(modes[0].id);

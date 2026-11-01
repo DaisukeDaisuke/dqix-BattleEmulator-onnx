@@ -19,6 +19,8 @@ export function aiClosedStep(g,x,decisionGraph,targetGraph) {
   Object.assign(targetFeeds,{seed:a.nextSeed,position:a.nextPosition,enabled:g.and(x.enabled,a.targetRequest),selectorIndex:resolvedIndex,
     targetSide:g.where(fallback,x.fallbackTargetSide,choose(g,x.targetSide,slot)),targetScope:g.where(fallback,x.fallbackTargetScope,choose(g,x.targetScope,slot)),
     repeatCode:g.where(fallback,x.fallbackRepeatCode,choose(g,x.repeatCode,slot))});
+  if('candidateActionId' in targetFeeds)targetFeeds.candidateActionId=g.where(fallback,2,choose(g,x.actionIds,slot));
+  if('candidateOperation' in targetFeeds)targetFeeds.candidateOperation=g.where(fallback,1,choose(g,x.operations,slot));
   const callback=g.inline(targetGraph,targetFeeds,`closed_target_${g.index}`),resumeFeeds={};
   for(const input of decisionGraph.inputs) {
     const feedback=decisionGraph.contract.feedback[input.name];resumeFeeds[input.name]=feedback?a[feedback]:x[input.name];

@@ -13,7 +13,7 @@ const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const require=createRequire(import.meta.url);
 
 export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulator.html'),browserPath,
-  playwrightDirectory=process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES,ortDirectory,outputPath,screenshotPath}={}){
+  playwrightDirectory=process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES,ortDirectory,outputPath,screenshotPath,romPath,fontPath}={}){
   if(!browserPath)throw Error('Supply --browser pointing to an existing Chromium executable. No browser is downloaded.');
   const {chromium}=require(playwrightDirectory?resolve(playwrightDirectory,'playwright'):'playwright');
   const browser=await chromium.launch({executablePath:resolve(browserPath),headless:true,args:['--no-sandbox']});
@@ -36,9 +36,10 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
     }catch(error){await route.abort();errors.push({kind:'runtime-read',message:error.message});}
   });
   const check=(name,passed,detail)=>checks.push({name,passed:!!passed,...(detail===undefined?{}:{detail})});
-  let initial,execution,chunked,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,downloaded,mobile;
+  let initial,execution,chunked,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,functional,continuation,downloaded,mobile,qaFont;
   try{
     await page.goto(pathToFileURL(resolve(htmlPath)).href);await page.waitForFunction(()=>window.DQ9Release?.ready===true);
+    if(fontPath){const bytes=await readFile(resolve(fontPath));qaFont={path:resolve(fontPath),sha256:hash(bytes),purpose:'Local CJK font for screenshot readability; no runtime or input changes.'};await page.addStyleTag({content:`@font-face{font-family:"Noto Sans JP";src:url(data:font/ttf;base64,${bytes.toString('base64')});font-weight:100 900}body{font-family:"Noto Sans JP",system-ui,sans-serif}textarea,pre{font-family:ui-monospace,"Noto Sans JP",monospace}`});await page.evaluate(()=>document.fonts.ready);}
     initial=await page.evaluate(()=>{
       const api=window.DQ9Release,encounters=api.modes.filter(mode=>mode.kind==='battle'),hashes=[],actors=[];
       for(const encounter of encounters){api.selectMode(encounter.id);hashes.push(document.getElementById('program-hash').textContent);actors.push(document.getElementById('input-json').value);}
@@ -164,6 +165,40 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
     check('camera-example-uses-same-program',presentation.programHash===initial.programHash&&presentation.scope==='camera-projection');
     check('actual-computed-records-drive-three-camera-calls',presentation.complete===true&&presentation.numericOnly===false&&presentation.projectionComplete===true&&presentation.outerCalls===3&&presentation.graphExecutionCounts.ortCalls>0&&presentation.graphExecutionCounts.nativeCalls===0&&presentation.cameraTraceVisible,presentation);
     check('camera-projection-does-not-claim-whole-battle',presentation.wholeBattleComplete===false&&presentation.wholeCameraComplete===false);
+    if(romPath){
+      const missing=await page.evaluate(async()=>{
+        window.DQ9Release.selectMode('common-functional-frame-example');document.getElementById('warmup').checked=false;document.getElementById('trace').checked=false;document.getElementById('seed').value='be72db2cd03c08aa';
+        try{await window.DQ9Release.run();return{rejected:false};}catch(error){return{rejected:true,message:error.message,stillIdle:!window.DQ9Release.busy};}
+      });
+      check('functional-frame-requires-explicit-local-assets',missing.rejected&&missing.stillIdle&&missing.message.includes('ROM'),missing);
+      await page.locator('#rom-file').setInputFiles(resolve(romPath));await page.waitForFunction(()=>!!window.DQ9Release.localAssetManifest&&!window.DQ9Release.busy);
+      functional=await page.evaluate(async()=>{
+        const record=await window.DQ9Release.run(),result=record.result,row=result.rows[0];
+        return{programHash:record.programHash,mode:row.camera.mode,complete:result.complete,numericOnly:result.numericOnly,frameSummary:row.camera.frameSummary,
+          finalSeed:row.seed.map(b=>b.toString(16).padStart(2,'0')).reverse().join(''),position:row.position,assetManifest:window.DQ9Release.localAssetManifest,
+          nextCommandInputRequired:row.camera.nextCommandInputRequired,commandMenuComplete:row.camera.commandMenuComplete,wholePhysicalWorldComplete:row.camera.wholePhysicalWorldComplete,
+          noDirectProjection:!row.camera.projection,graphExecutionCounts:result.graphExecutionCounts,unresolvedEffects:result.unresolvedEffects,
+          scopeText:document.getElementById('scope-result').textContent,assetText:document.getElementById('rom-assets-status').textContent};
+      });
+      check('local-ROM-assets-match-verified-original-data',functional.assetManifest.gameCode==='YDQJ'&&functional.assetManifest.files.length===6&&functional.assetText.includes('一致'),functional.assetManifest);
+      check('public-functional-frame-runs-actual-ORT',functional.programHash===initial.programHash&&functional.mode==='functional-frame'&&functional.complete&&functional.numericOnly===false&&functional.graphExecutionCounts.ortCalls>0&&functional.graphExecutionCounts.nativeCalls===0&&functional.noDirectProjection,functional);
+      check('natural-frame-reaches-original-next-command-boundary',functional.frameSummary.frames===152&&functional.frameSummary.commands===3&&functional.frameSummary.mainState===7&&functional.frameSummary.currentActionIndex===3&&functional.frameSummary.complete&&functional.finalSeed==='955a86cd8ba49777',functional.frameSummary);
+      check('functional-scope-excludes-menu-and-physical-timing',functional.nextCommandInputRequired===true&&functional.commandMenuComplete===false&&functional.wholePhysicalWorldComplete===false&&functional.scopeText.includes('実機'),functional.scopeText);
+      continuation=await page.evaluate(async()=>{
+        const before=structuredClone(window.DQ9Release.lastResult.result.rows[0]),commandInputs=[{actorId:0,commands:[{actionId:9,targets:[192]}]}];
+        document.getElementById('next-commands-json').value=JSON.stringify(commandInputs);const enabled=!document.getElementById('next-numeric').disabled;
+        const record=await window.DQ9Release.continueNumeric(),result=record.result,row=result.rows[0],expectedInput=structuredClone(before);expectedInput.actors.find(a=>a.actorId===0).commands=commandInputs[0].commands;
+        return{enabled,programHash:record.programHash,boundary:result.boundary,complete:result.complete,supported:row.supported,completedTurns:row.completedTurns,
+          onlyExplicitCommandsChanged:JSON.stringify(record.conditions.inputs[0])===JSON.stringify(expectedInput),commandChanged:before.actors.find(a=>a.actorId===0).commands[0].actionId!==9,
+          retainedFrameExactly:JSON.stringify(before.camera.frameState)===JSON.stringify(row.camera.frameState),finalSeed:row.seed.map(b=>b.toString(16).padStart(2,'0')).reverse().join(''),position:row.position,
+          numericTurnPending:row.camera.numericTurnPending,nextNumericTurnReady:row.camera.nextNumericTurnReady,wholeBattleComplete:result.wholeBattleComplete,
+          buttonDisabledAfterRun:document.getElementById('next-numeric').disabled,scopeText:document.getElementById('scope-result').textContent,unresolvedEffects:result.unresolvedEffects,graphExecutionCounts:result.graphExecutionCounts};
+      });
+      check('next-command-UI-preserves-all-other-input-state',continuation.enabled&&continuation.commandChanged&&continuation.onlyExplicitCommandsChanged&&continuation.retainedFrameExactly&&continuation.programHash===initial.programHash,continuation);
+      check('next-numeric-turn-matches-original-retained-state',continuation.complete&&continuation.supported&&continuation.boundary==='numeric-turn'&&continuation.completedTurns===2&&continuation.finalSeed==='c4e484ab52a23541'&&continuation.position===110&&continuation.graphExecutionCounts.ortCalls>0,continuation);
+      check('next-presentation-remains-an-explicit-boundary',continuation.numericTurnPending===true&&continuation.nextNumericTurnReady===false&&continuation.wholeBattleComplete===false&&continuation.buttonDisabledAfterRun&&continuation.scopeText.includes('演出開始前'),continuation.scopeText);
+    }
+    if(screenshotPath)await page.screenshot({path:resolve(screenshotPath.replace(/\.png$/i,'-desktop.png')),fullPage:true});
     await page.setViewportSize({width:390,height:844});
     mobile=await page.evaluate(()=>({width:innerWidth,bodyWidth:document.body.scrollWidth,documentWidth:document.documentElement.scrollWidth,runVisible:!!document.getElementById('run').getClientRects().length}));
     check('mobile-layout-does-not-overflow-document',mobile.bodyWidth<=mobile.width&&mobile.documentWidth<=mobile.width&&mobile.runVisible,mobile);
@@ -172,12 +207,12 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
   finally{await context.close();await browser.close();}
   const result={schema:'dq9-common-html-verification-v1',passed:checks.every(item=>item.passed)&&errors.length===0,
     htmlPath:resolve(htmlPath),htmlSha256:hash(await readFile(htmlPath)),runtimeSource:ortDirectory?'existing local official distribution, intercepted at the pinned CDN URLs':'pinned CDN',
-    runtimeFiles,initial,execution,chunked,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,downloaded,mobile,checks,errors,warnings,independentRomVerification:false};
+    runtimeFiles,qaFont,initial,execution,chunked,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,functional,continuation,downloaded,mobile,checks,errors,warnings,independentRomVerification:false};
   if(outputPath)await writeFile(resolve(outputPath),JSON.stringify(result,null,2)+'\n');return result;
 }
 
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  const options={},mapping={'--html':'htmlPath','--browser':'browserPath','--playwright-dir':'playwrightDirectory','--ort-dir':'ortDirectory','--out':'outputPath','--screenshot':'screenshotPath'};
+  const options={},mapping={'--html':'htmlPath','--browser':'browserPath','--playwright-dir':'playwrightDirectory','--ort-dir':'ortDirectory','--out':'outputPath','--screenshot':'screenshotPath','--rom':'romPath','--font':'fontPath'};
   try{
     const args=process.argv.slice(2);
     for(let i=0;i<args.length;i++){const key=mapping[args[i]];if(!key||!args[i+1]||args[i+1].startsWith('--'))throw Error('Use --html FILE --browser EXISTING_CHROMIUM [--playwright-dir EXISTING_NODE_MODULES] [--ort-dir EXISTING_ORT_DIST] [--out JSON] [--screenshot PNG]');options[key]=args[++i];}

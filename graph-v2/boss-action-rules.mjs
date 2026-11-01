@@ -17,4 +17,6 @@ export function bossRuleColumns(g,actionId,rules=BOSS_ACTION_RULES){
   for(const key of Object.keys(rules[0]).filter(k=>!['name','raw'].includes(k)))columns[key]=g.op('Gather',[g.constant(rules.map(x=>x[key]),'float32',[ids.length]),integerIndex],{axis:0},{shape:['N',1]});
   return columns;
 }
-export function resistanceFraction(g,percent){return g.op('Gather',[g.constant(Array.from({length:256},(_,i)=>Math.fround(i/100)),'float32',[256]),g.cast(percent,'int32')],{axis:0},{shape:['N',1]});}
+// The original susceptibility getter can add25 to a raw byte. Store every
+// reachable division result, including percentages256..280, exactly.
+export function resistanceFraction(g,percent){return g.op('Gather',[g.constant(Array.from({length:281},(_,i)=>Math.fround(i/100)),'float32',[281]),g.cast(percent,'int32')],{axis:0},{shape:['N',1]});}
