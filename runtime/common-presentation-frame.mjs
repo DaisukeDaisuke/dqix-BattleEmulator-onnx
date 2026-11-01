@@ -11,6 +11,7 @@ import {createCommonAnimationProgramBuilder,COMMON_ANIMATION_PROGRAM_MODELS} fro
 import {createCommonAnimationTickRunner,COMMON_ANIMATION_TICK_MODELS} from './common-animation-tick.mjs';
 import {COMMON_ANIMATION_STATE_OFFSETS,COMMON_ANIMATION_RESET_BASE,COMMON_ANIMATION_RESET_WORDS} from '../graph-v2/common-animation-fields.mjs';
 import {createCommonAnimationActorResourceRunner,COMMON_ANIMATION_ACTOR_RESOURCE_MODELS} from './common-animation-actor-resource.mjs';
+import {createCommonAnimationResourceOpcodeRunner,COMMON_ANIMATION_RESOURCE_OPCODE_MODELS,mergeCommonResourceAllocators} from './common-animation-resource-opcode.mjs';
 import {COMMON_RESOURCE_LOADER_MODELS} from './common-resource-loader.mjs';
 import {inspectOriginalNarc} from './common-rom-assets.mjs';
 
@@ -20,6 +21,7 @@ const requireData=(condition,message)=>{if(!condition)throw Error(message);};
 const serializableInput=input=>JSON.parse(JSON.stringify(input,(_,value)=>ArrayBuffer.isView(value)?Array.from(value):value));
 export const COMMON_PRESENTATION_FRAME_INPUTS=['dq9-empty-script-static-font-functional-frame-v1','dq9-script-static-font-functional-frame-v2'];
 COMMON_PRESENTATION_FRAME_MODELS.push(...COMMON_ANIMATION_TICK_MODELS.filter(name=>!COMMON_PRESENTATION_FRAME_MODELS.includes(name)));
+COMMON_PRESENTATION_FRAME_MODELS.push(...COMMON_ANIMATION_RESOURCE_OPCODE_MODELS.filter(name=>!COMMON_PRESENTATION_FRAME_MODELS.includes(name)));
 
 /** Scatter only bytes computed by common ordinary/periodic arena modules. */
 export function computedPresentationCommands(camera){
@@ -60,12 +62,15 @@ export function commonPresentationFrameInitial(camera,input){
   const resourceAllocators=s.input.resourceAllocators??{};
   requireData(resourceAllocators&&typeof resourceAllocators==='object'&&!Array.isArray(resourceAllocators),'The shared original resource allocator map must be an object');
   for(const key of Object.keys(resourceAllocators))requireData(/^[1-9][0-9]*$/.test(key)&&Number.isSafeInteger(Number(key))&&Number(key)<=0xffffffff,'Allocator keys must be exact original nonnull u32 pointer values');
-  s.resourceAllocators=clone(resourceAllocators);
+  s.resourceInstallation=clone(s.input.resourceInstallation??null);
+  s.resourceAllocators=mergeCommonResourceAllocators(resourceAllocators,s.resourceInstallation);
+  s.scriptTaskCount=s.input.scriptTaskCount??0;s.scriptTaskIds=clone(s.input.scriptTaskIds??Array(8).fill(0));
+  requireData(Number.isInteger(s.scriptTaskCount)&&s.scriptTaskCount>=0&&s.scriptTaskCount<256&&Array.isArray(s.scriptTaskIds)&&s.scriptTaskIds.length===8&&s.scriptTaskIds.every(v=>Number.isInteger(v)&&v>=0&&v<65536),'Actual resource tracker byte and eight task IDs are required');
   return s;
 }
 
 export async function createCommonPresentationFrameRunner(options){
-  const {runGraph,getModel,onTrace,onPhase}=options,admission=await createCommonCameraAdmissionRunner(options),camera=await createCommonCameraFrameRunner(options),entry=await createCommonPresentationEntryRunner(options),animation=createCommonAnimationProgramBuilder(options),actorResource=createCommonAnimationActorResourceRunner(options),animationTick=createCommonAnimationTickRunner(options);
+  const {runGraph,getModel,onTrace,onPhase}=options,admission=await createCommonCameraAdmissionRunner(options),camera=await createCommonCameraFrameRunner(options),entry=await createCommonPresentationEntryRunner(options),animation=createCommonAnimationProgramBuilder(options),actorResource=createCommonAnimationActorResourceRunner(options),resourceOpcodes=createCommonAnimationResourceOpcodeRunner(options),animationTick=createCommonAnimationTickRunner({...options,executeOpcode:resourceOpcodes.executeOpcode});
   async function call(name,input){const ir=await getModel(name);if(!ir)throw Error('Missing shared frame model '+name);const values={...ir.contract.defaults,...input},feeds=Object.fromEntries(ir.inputs.map(v=>[v.name,Array.isArray(values[v.name])?values[v.name]:[values[v.name]]]));for(const [key,v]of Object.entries(feeds))if(v.some(x=>x===undefined))throw Error(name+' requires actual input '+key);const out=(await runGraph(name,[feeds]))[0];await onTrace?.({model:name,inputs:[clone(feeds)],outputs:[clone(out)]});return out;}
   const objects=s=>new Map([...s.row.roster,...s.row.lookupObjects??[]].map(o=>[o.id,o]));
   const command=s=>s.commands[s.row.currentActionIndex]??null;
@@ -158,7 +163,7 @@ export async function createCommonPresentationFrameRunner(options){
     s.sceneBytes=[...o.nextSceneBytes];s.sceneShort70ec=scalar(o,'nextSceneShort70ec');s.sceneVector71ccU16=[...o.nextSceneVector71ccU16];applyActorOutput(s,o);s.panelFlags=[...o.nextPanelFlags];s.panelQueueBytes=[...o.nextPanelQueueBytes];s.transientBytes=[...o.nextTransientBytes];s.message.window.windowActive=!!o.nextUiWindowWordsU16[0];s.message.window.windowState=o.nextUiWindowWordsU16[2];
     if(!scalar(o,'returnValue'))return{waiting:true};
     if(bool(o,'requestCameraCleanup'))s.row=(await camera.cleanupRows([{...s.row,commandCleanup:true,turnCleanup:false}]))[0];
-    const cleanup=await call('rom-common-script-cleanup',{...actorSceneInput(s),taskCount:0,backgroundTask:-1,loaderTaskCount:s.message.loader?.taskCount??(s.message.primaryTask?1:0),effectListPresent:initial.effectListPresent??false,resourceListPresent:initial.resourceListPresent??false,resourceObjectPresent:initial.resourceObjectPresent??Array(16).fill(false),specialObjectPresent:initial.specialObjectPresent??false,decorationPackagesPresent:initial.decorationPackagesPresent??[false,false],soundPlayerPresent:initial.soundPlayerPresent??false,scriptStateU16:limbs(s.row.programFlags3e8),globalResourceCount:0,participantMask:IDS.map(id=>c?.sourceId===id),lighting:s.lighting,enabled:true});
+    const cleanup=await call('rom-common-script-cleanup',{...actorSceneInput(s),taskCount:s.scriptTaskCount??0,backgroundTask:-1,loaderTaskCount:s.message.loader?.taskCount??(s.message.primaryTask?1:0),effectListPresent:initial.effectListPresent??false,resourceListPresent:s.resourceInstallation?.ownerHeadU16?.some(Boolean)??initial.resourceListPresent??false,resourceObjectPresent:initial.resourceObjectPresent??Array(16).fill(false),specialObjectPresent:initial.specialObjectPresent??false,decorationPackagesPresent:initial.decorationPackagesPresent??[false,false],soundPlayerPresent:initial.soundPlayerPresent??false,scriptStateU16:limbs(s.row.programFlags3e8),globalResourceCount:words(s.scriptGlobalU16??[0,0])[0],participantMask:IDS.map(id=>c?.sourceId===id),lighting:s.lighting,enabled:true});
     if(!bool(cleanup,'completed'))return{pending:'Script cleanup requires its original external-resource producer'};
     s.row.programFlags3e8=words(cleanup.nextScriptStateU16)[0];s.lighting=[...cleanup.nextLighting];applyActorOutput(s,cleanup);
     const advance=await call('rom-common-presentation-advance',{queueCount:s.row.queuedPresentationRecords?.length??0,currentIndex:s.row.currentActionIndex,presentationState:s.row.presentationState,overridePresent:false,enabled:true});
@@ -220,14 +225,19 @@ export async function createCommonPresentationFrameRunner(options){
       if(bool(delay,'enabledAfterDelay')){
         const source=objects(s).get(current.sourceId),appearance=s.actors[current.sourceId]?.resourceAppearance??{},allocatorIndex=s.scriptAllocatorIndex??s.input.scriptAllocatorIndex??0,allocators=s.scriptAllocatorPointersU16??s.input.scriptAllocatorPointersU16??Array(16).fill(0);
         const resourceState={scriptFlagsU16:limbs(s.row.programFlags3e8),resourceStateU16:[...(s.actorResourceStateU16??s.input.actorResourceStateU16??Array(8).fill(0))]};
-        const resource=await actorResource.run({state:resourceState,loaderState:s.message.loader,allocators:s.resourceAllocators,context:{...appearance,participantCount:current.header[8],firstParticipantPresent:current.record.participantIndex>=0,sourceId:current.sourceId,partyObjectPresent:!!source&&source.lookupPresent!==false,allocatorU16:allocators.slice(2*allocatorIndex,2*allocatorIndex+2),globalScriptOwnerPresent:true,globalAllocatorIndex:allocatorIndex}});
+        const resource=await actorResource.run({state:resourceState,loaderState:s.message.loader,allocators:s.resourceAllocators,installationState:s.resourceInstallation,context:{...appearance,objectPointerU16:source?.objectPointerU16??appearance.objectPointerU16,scriptAllocatorIndex:allocatorIndex,participantCount:current.header[8],firstParticipantPresent:current.record.participantIndex>=0,sourceId:current.sourceId,partyObjectPresent:!!source&&source.lookupPresent!==false,allocatorU16:allocators.slice(2*allocatorIndex,2*allocatorIndex+2),globalScriptOwnerPresent:true,globalAllocatorIndex:allocatorIndex}});
         if(!resource.complete)return resource;
         s.row.programFlags3e8=words(resourceState.scriptFlagsU16)[0];s.actorResourceStateU16=[...resourceState.resourceStateU16];actorResourceReturned=resource.returnValue!==0;
       }
       const tickInput={scriptBaseU16:limbs(scriptBase),scriptOwnerGlobalU16:s.scriptOwnerGlobalU16??[0,0],scriptEnabled:s.message.scriptEnabled,delayReturned:bool(delay,'returnedForDelay'),actorResourcePrecheckComplete:bool(delay,'enabledAfterDelay'),actorResourceReturned,scriptFlagsLow:s.row.programFlags3e8%65536,resourceStates:s.scriptResourceStates??s.input.scriptResourceStates??[0,0,0,0],feedbackSelector:s.feedbackSelector??s.input.feedbackSelector??0,feedbackCount:s.feedbackCount??s.input.feedbackCount??0,timelinePointersPresent:s.timelinePointersPresent??s.input.timelinePointersPresent??Array(12).fill(false),timelineExtraByte:s.timelineExtraByte??s.input.timelineExtraByte??0,actionRecordPresent:true,actionCategory:action.category,eventFlagsU16:s.eventFlagsU16,enabled:true};
       if(s.scriptState?.scriptStateU16){
+        if(s.scriptState.program?.codes.some(code=>[18,19,20].includes(code.opcode))){
+          const index=s.scriptAllocatorIndex;s.scriptState.animationResources={loader:s.message.loader,installer:s.resourceInstallation,allocators:s.resourceAllocators,scriptTaskCount:s.scriptTaskCount,scriptTaskIds:s.scriptTaskIds,eventFlagsU16:s.eventFlagsU16,resourceCounterU16:s.scriptGlobalU16??[0,0],allocatorIndex:index,safeAllocatorPointerU16:s.scriptAllocatorPointersU16.slice(2*index,2*index+2)};
+        }
         const tick=await animationTick.run({state:s.scriptState,input:tickInput,maxTransitions:s.input.maxAnimationTransitions??4096});
         if(!tick.complete){if(tick.budgetExhausted){const error=Error(tick.pending);error.code='DQ9_BUDGET';throw error;}return{pending:tick.pending};}
+        const resources=tick.state.animationResources;
+        if(resources){s.message.loader=resources.loader;s.resourceInstallation=resources.installer;s.resourceAllocators=resources.allocators;s.scriptTaskCount=resources.scriptTaskCount;s.scriptTaskIds=[...resources.scriptTaskIds];s.scriptGlobalU16=[...resources.resourceCounterU16];delete tick.state.animationResources;}
         s.scriptState=tick.state;s.eventFlagsU16=[...tick.state.eventFlagsU16];s.scriptOwnerGlobalU16=[...tick.state.scriptOwnerGlobalU16];if(tick.tailExecuted)s.tailOwnerPresent=tick.state.tailOwnerPresent;
       }else{
         const cursorPresent=s.scriptState?.cursorIndex!==undefined&&s.scriptState?.cursorIndex!==null,tick=await call('rom-common-empty-script-tick',{...tickInput,cursorPresent,tailOwnerPresent:s.tailOwnerPresent??false});

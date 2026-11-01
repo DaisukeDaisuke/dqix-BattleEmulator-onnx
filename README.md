@@ -118,6 +118,16 @@ AI対象callbackも共有グラフへ合成します。[`graph-v2/common-target-
 
 命令61は実際の現在コマンドのポインターからリセット値を計算し、元の関数が保持するバイトも保持します。同じ初期化処理の29個の半ワードは、元の全初期化呼出し63ケース・1,827項目でも比較しています。この範囲は共通命令実行と静かな更新末尾であり、未対応の描画・タイムライン命令を完了扱いにするものではありません。
 
+### 共通の資源読込・設置
+
+命令18・19・20のキュー登録、待機、CHR設置、タスク除去を共通グラフへ接続しています。アクター資源のCCHR/CMOT設置も同じ実アロケータとバイト領域を共有します。`frameInput.resourceAllocators`は実ポインターをキーとする状態、`resourceInstallation`は明示した初期メモリー・所有リスト・必要なグラフィックス状態です。実際の領域やアロケータがない場合は、その不足を返します。
+
+命令20の設置から後続命令66・11と更新末尾までを元ROMの更新関数全体で比較し、12ケース・399,416項目、不一致0でした。各境界からのJSON再開132回も含みます。アロケータ、全スクリプト所有領域、ロード済みデータ、所有リスト、既知のヒープバイト、VRAM転送キューを比較しています。未初期化のBCFG名末尾と未表現のHMRFツリー先頭は明示的な比較対象外です。検証は[`scripts/verify-common-animation-install-runtime-rom.mjs`](scripts/verify-common-animation-install-runtime-rom.mjs)の`--tick --resume`で実行できます。
+
+CCHR/CMOT側は実ROM命令を使う46呼出しとJSON再開3回を比較し、3,511,848項目が一致しました。実際のアーカイブ・モデル入力、確保失敗、JAC/MAM/MPTのAnimationData、パッケージ末尾追加、所有ノード、ロードタスク除去を検証しています。未初期化のBCFG名末尾380バイトは未知として除外します。5つの初期入力はアーカイブのモデル名1バイトを変更してモデル置換を避けた派生入力で、この変更を検証結果に記録します。ROM命令は変更しません。検証入口は[`scripts/verify-common-cchr-actor-rom.mjs`](scripts/verify-common-cchr-actor-rom.mjs)です。
+
+実機へのVRAM転送、NSBMDモデルの置換、一部のAnimationData、資源リストを解放する後処理は、それぞれの未実装境界を保持します。フレームの後処理には計算済みの資源数・タスク数・所有リストを渡し、残る資源を空扱いにして完了させません。
+
 ### モデルのダウンロード単位
 Hugging Faceへは、共通数値処理・演出とカメラ・明示CPU倍精度の3個の`models/*.onnxbundle.gz`を公開します。各パックにONNX本体とグラフIRを収録し、全メンバーのSHA-256と元のモデル境界を保持します。モデル数が増えてもダウンロード単位は最大3個です。`runtime-index.json`の`delivery`と`bundles`が、実際の要求数・モデル数・圧縮前後のサイズを宣言します。
 単体HTMLには同じモデルを埋め込んでいるため、HTMLのダウンロード後にHugging Faceへモデル取得を要求しません。パックを別のランタイムで使う場合は[`runtime/model-bundle.mjs`](runtime/model-bundle.mjs)の`createModelBundleLoader({index,baseURL})`から`loadAll()`でモデルMapを得ます。`baseURL`には固定コミットの`resolve/<commit>/`を指定します。`getModel(name)`は必要なパックだけ読み、同時要求も一回のダウンロードを共有します。全体と各メンバーのSHA-256・バイト範囲を確認してから、元のONNXを`Uint8Array`で返します。

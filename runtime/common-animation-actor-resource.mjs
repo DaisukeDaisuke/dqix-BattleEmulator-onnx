@@ -3,15 +3,16 @@
 // substitutes elapsed time for a task result or invents a loaded archive.
 import {createCommonResourceLoaderRunner,COMMON_RESOURCE_LOADER_MODELS} from './common-resource-loader.mjs';
 import {createCommonSafeAllocatorRunner,COMMON_SAFE_ALLOCATOR_MODELS} from './common-safe-allocator.mjs';
+import {createCommonCchrInstallRunner,COMMON_CCHR_INSTALL_MODELS} from './common-cchr-install.mjs';
 
 const clone=x=>structuredClone(x),scalar=(o,k)=>Number(o[k]?.[0]);
 const requireData=(condition,message)=>{if(!condition)throw Error(message);};
 const limbs=(x,n)=>Array.isArray(x)&&x.length===n&&x.every(v=>Number.isInteger(v)&&v>=0&&v<65536);
 const signedWord=x=>{const n=x[0]+65536*x[1];return n>=0x80000000?n-0x100000000:n;};
-export const COMMON_ANIMATION_ACTOR_RESOURCE_MODELS=['rom-common-animation-actor-resource',...COMMON_RESOURCE_LOADER_MODELS,...COMMON_SAFE_ALLOCATOR_MODELS];
+export const COMMON_ANIMATION_ACTOR_RESOURCE_MODELS=[...new Set(['rom-common-animation-actor-resource',...COMMON_RESOURCE_LOADER_MODELS,...COMMON_SAFE_ALLOCATOR_MODELS,...COMMON_CCHR_INSTALL_MODELS])];
 
 export function createCommonAnimationActorResourceRunner(options){
-  const {getModel,runGraph,onTrace}=options,loader=createCommonResourceLoaderRunner(options),allocator=createCommonSafeAllocatorRunner(options);
+  const {getModel,runGraph,onTrace}=options,loader=createCommonResourceLoaderRunner(options),allocator=createCommonSafeAllocatorRunner(options),cchr=createCommonCchrInstallRunner(options);
   async function call(input){
     const name='rom-common-animation-actor-resource',model=await getModel(name);
     requireData(model,'The original actor-resource graph is required');
@@ -22,12 +23,14 @@ export function createCommonAnimationActorResourceRunner(options){
   }
   return{
     models:COMMON_ANIMATION_ACTOR_RESOURCE_MODELS,
-    async run({state,loaderState,context,allocators}={}){
+    async run({state,loaderState,context,allocators,installationState}={}){
       requireData(limbs(state?.scriptFlagsU16,2)&&limbs(state?.resourceStateU16,8),'Retained script flags and all16 actor-resource state bytes are required');
       requireData(Number.isInteger(context?.participantCount)&&context.participantCount>=0&&context.participantCount<256&&typeof context.firstParticipantPresent==='boolean'&&Number.isInteger(context.sourceId)&&typeof context.partyObjectPresent==='boolean','The actual current command and actor lookup are required');
       requireData(limbs(context.allocatorU16,2),'The current original allocator pointer is required');
-      if(state.boundary)return{complete:false,pending:state.boundary.reason,boundary:clone(state.boundary)};
+      const resumeInstall=state.boundary?.kind==='original-archive-installation'&&installationState&&state.allocatedNodeU16?.some(Boolean)&&state.boundary.sourceId===context.sourceId&&state.boundary.taskId===signedWord(state.resourceStateU16.slice(2,4));
+      if(state.boundary&&!resumeInstall)return{complete:false,pending:state.boundary.reason,boundary:clone(state.boundary)};
       const input={...context,scriptFlagsU16:state.scriptFlagsU16,resourceStateU16:state.resourceStateU16,allocatorPresent:context.allocatorU16.some(Boolean),stage:0,enabled:true};
+      if(resumeInstall){input.stage=2;input.allocationReturned=true;input.allocationPresent=true;delete state.boundary;}
       const stop=(reason,extra={})=>({complete:false,pending:reason,...extra});
       for(let transitions=0;transitions<8;transitions++){
         const out=await call(input);
@@ -61,7 +64,11 @@ export function createCommonAnimationActorResourceRunner(options){
           state.allocatedNodeU16=[...allocated.pointerU16];
         }else if(scalar(out,'requestArchiveInstall')){
           state.boundary={kind:'original-archive-installation',reason:'The original CCHR/CMOT installer and resource-list append are required',callCompleted:false,taskId:signedWord(out.requestTaskIdU16),sourceId:context.sourceId,allocatedNodeU16:[...state.allocatedNodeU16]};
-          return stop(state.boundary.reason,{requiresArchiveInstaller:true,boundary:clone(state.boundary)});
+          const task=loader.task(loaderState,state.boundary.taskId),pointer=context.allocatorU16[0]+65536*context.allocatorU16[1],allocatorState=allocators?.[String(pointer)];
+          if(!installationState||!limbs(context.objectPointerU16,2)||!Number.isInteger(context.scriptAllocatorIndex)||!task?.bytes||!allocatorState)return stop(state.boundary.reason,{requiresArchiveInstaller:true,boundary:clone(state.boundary)});
+          const installed=await cchr.installActor({state:installationState,allocatorState,objectPointerU16:context.objectPointerU16,archivePointerU16:task.dataPointerU16,archiveBytes:task.bytes,ownerNodePointerU16:state.allocatedNodeU16,actorId:context.sourceId,allocatorIndex:context.scriptAllocatorIndex,packageId:scalar(out,'requestPackageId')});
+          if(!installed.complete){state.boundary.reason=installed.pending;return stop(installed.pending,{requiresArchiveInstaller:true,boundary:clone(state.boundary)});}
+          delete state.boundary;input.stage=3;input.installationCompleted=true;input.resourceAppendCompleted=installed.ownerAppended;
         }else if(scalar(out,'requestRemoveTask')){
           const removed=await loader.remove(loaderState,signedWord(out.requestTaskIdU16));
           requireData(removed.complete,'The original task removal must return before clearing script state');input.stage=4;input.removeReturned=true;
