@@ -7,7 +7,8 @@ import {jadamaTarget} from './encounter-expansion/build-jadama-ai.mjs';
 import {buildCommonTargetCallbacks,buildCommonAiStep} from './common-target-callbacks.mjs';
 import {ACTOR_FIELDS} from './rules.mjs';
 import {COMMON_RAW_TIMER_FIELDS,COMMON_RAW_TIMER_OFFSETS} from './common-modifier-rules.mjs';
-import {COMMON_BATTLE_CAMERA_MODELS} from '../runtime/common-battle-camera.mjs';
+import {COMMON_PRESENTATION_MODELS} from '../runtime/common-presentation.mjs';
+import {COMMON_PRESENTATION_FRAME_MODELS} from '../runtime/common-presentation-frame.mjs';
 const directory=new URL('./',import.meta.url),hash=b=>createHash('sha256').update(b).digest('hex');
 
 export function buildCommonRandom(){
@@ -47,10 +48,10 @@ export const COMMON_OPERATIONS={turnBegin:'rom-common-turn-begin',random:'rom-co
   commandBegin:'rom-common-command-begin',coverTarget:'rom-common-cover-target',redirectTarget:'rom-common-redirect-target',redirectCritical:'rom-common-redirect-critical',targetEffect:'rom-common-target-effect',enemyReaction:'rom-common-command-enemy-reaction',afterAction:'rom-common-after-action',bladeRecoil:'rom-common-blade-recoil',commandEnd:'rom-common-command-end',
   populationRequest:'rom-common-population-request',populationPlan:'rom-common-population-plan',populationInsert:'rom-common-population-insert',populationRoster:'rom-common-population-roster',
   postStatus:'rom-common-post-status',periodic:'rom-common-periodic',turnStatus:'rom-common-turn-status',
-  presentationCommand:'rom-common-camera-command',presentationAdvance:'rom-common-presentation-advance',cameraTurn:'rom-common-camera-turn'};
+  presentationCommand:'rom-common-presentation-command',presentationStack:'rom-common-presentation-stack',presentationAdvance:'rom-common-presentation-advance'};
 export async function writeCommonProgram(){
   const modules=[];
-  for(const name of [...new Set([...Object.values(COMMON_OPERATIONS),...COMMON_BATTLE_CAMERA_MODELS])]){
+  for(const name of [...new Set([...Object.values(COMMON_OPERATIONS),...COMMON_PRESENTATION_MODELS,...COMMON_PRESENTATION_FRAME_MODELS])]){
     let found;
     for(const relative of ['./','./encounter-expansion/']){
       try{const base=new URL(relative,import.meta.url),bytes=await readFile(new URL(name+'.onnx',base));found={name,onnx:relative+name+'.onnx',ir:relative+name+'.json',sha256:hash(bytes)};break;}
@@ -74,8 +75,7 @@ export async function writeCommonProgram(){
     limits:{transitionBudget:'explicit input; exhaustion is unresolved',turnBudget:'explicit input; exhaustion is not a victory or loss'},
     definitions:'Input tables only. Neither the program nor runtime may switch an execution program by monster name or ID.',
     seedRepresentation:'Eight base256 float32 limbs preserve uint64 LCG exactly.',
-    presentation:{mode:'battle-camera',factory:'runtime/common-battle-camera.mjs',models:COMMON_BATTLE_CAMERA_MODELS,outerCalls:'Computed common command queue and explicit original advances.',externalInput:'One uint32 row+4 word per actual compact camera row at a genuine new dispatcher input boundary, up to12. Read-only ONNX predicates declare rowIds and wordCount. Calls that do not consume row+4 request no input. Initial visual/program/camera conditions are packaged data or explicit battle inputs.',boundary:'Retain computed RNG, battle state, world and camera memory across calls and turns. Candidate inputs and observations are separate; observations only filter computed branches. ROM, rendering, font, stack, asset loader and heap execution are not runtime dependencies.'},
-    search:{factory:'runtime/common-battle-search.mjs',row4DefaultDomain:'All uint32 values independently for each declared actual row: 2^(32*wordCount) Cartesian candidates represented by exact lazy cursors. Padding rows are never unknowns.',survivors:'Keep every consistent computed branch; budgets and unsupported paths remain resumable or blocked, never rejected implicitly.'},
+    presentation:{mode:'camera-projection',factory:'runtime/common-presentation.mjs',outerCalls:'Dynamic computed command queue with explicit advances; no three-command limit.',externalInput:'Correlated initial row+4 and initial visual/program/ABI state.',boundary:'Async resource/frame readiness and auxiliary event production are explicit unresolved boundaries. A projection cannot silently start the next numeric turn.',frameImplementation:{factory:'runtime/common-presentation-frame.mjs',models:COMMON_PRESENTATION_FRAME_MODELS,enabledByDefault:false,inputContract:'dq9-empty-script-static-font-functional-frame-v1',scope:'The implemented component-frame path requires explicit static font/message bytes, original stack ABI, empty resident animation scripts and qualified quiet rendering/resource state. Its actual computed UI, camera, script, scene and turn state determine progress. Physical rendering and device timing are outside this functional schedule.'}},
     completeGameClaim:false};
   await writeFile(new URL('common-battle-program.json',directory),JSON.stringify(program,null,2)+'\n');
   return {program,sha256:hash(JSON.stringify(program))};

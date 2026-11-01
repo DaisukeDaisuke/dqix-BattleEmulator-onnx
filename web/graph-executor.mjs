@@ -53,13 +53,11 @@ export function createGraphExecutor({models,backend='onnxruntime-wasm',ortVersio
   if(!['onnxruntime-wasm','onnxruntime-webgpu','native-wasm'].includes(backend))throw Error('未知の実行方式: '+backend);
   const byName=models instanceof Map?models:new Map(models.map(model=>[model.name,model]));
   const sessions=new Map(),counts={ortCalls:0,wasmCalls:0,webgpuCalls:0,nativeCalls:0,rows:0},explicitOrtModels=new Set(),explicitCpuModels=new Set(),executedModelProviders=new Map();
-  const sessionCounts={created:0,failed:0,released:0};
-  let closing=false,released=false,releasePromise=null,runTail=Promise.resolve(),gpuAdapterInfo=null;
+  let released=false,runTail=Promise.resolve(),gpuAdapterInfo=null;
   const getModel=name=>{const model=byName.get(name);if(!model)throw Error('共通モジュールがありません: '+name);return model;};
-  async function sessionFor(name){
+  async function getSession(name){
     if(released)throw Error('解放済みの実行器です。');
-    if(!sessions.has(name)){
-      const pending=(async()=>{
+    if(!sessions.has(name))sessions.set(name,(async()=>{
       const model=getModel(name);
       // The optional scalar compiler does not implement these operations.
       // This explicit declaration is shown in the run record and comparison.
@@ -67,6 +65,7 @@ export function createGraphExecutor({models,backend='onnxruntime-wasm',ortVersio
       const useOrt=backend!=='native-wasm'||needsOrt;
       const useGpu=backend==='onnxruntime-webgpu'&&model.executionProvider!=='wasm-explicit-cpu';
       if(useGpu&&Object.values(model.ir.values).some(value=>value.dtype==='float64'))throw Error('倍精度モジュールの明示CPU宣言がありません: '+name);
+      if(backend==='native-wasm'&&needsOrt)explicitOrtModels.add(name);
       onProgress?.({kind:'model',name,provider:useGpu?'onnxruntime-webgpu':useOrt?'onnxruntime-wasm':'native-wasm'});
       if(useOrt){
         // The WebGPU distribution's embedded CPU kernels omit DOUBLE. Load
@@ -74,24 +73,11 @@ export function createGraphExecutor({models,backend='onnxruntime-wasm',ortVersio
         const loaded=ortRuntime&&!useGpu?{ort:ortRuntime,adapterInfo:null}:await loadOrt(ortVersion,onProgress,useGpu?'webgpu':'wasm');
         if(loaded.adapterInfo)gpuAdapterInfo=loaded.adapterInfo;
         const ort=loaded.ort,session=await ort.InferenceSession.create(decode(model.onnx),{executionProviders:[useGpu?'webgpu':'wasm'],graphOptimizationLevel:'disabled',...(useGpu?{extra:{session:{disable_cpu_ep_fallback:'1'}}}:{})});
-        sessionCounts.created++;
         return{session,ort,provider:useGpu?'onnxruntime-webgpu':'onnxruntime-wasm'};
       }
-      const session=await NativeGraphWasmSession.create(model);sessionCounts.created++;
-      return{session,provider:'native-wasm'};
-      })().catch(error=>{
-        sessionCounts.failed++;
-        // A rejected initialization is never a reusable session.
-        if(sessions.get(name)===pending)sessions.delete(name);
-        throw error;
-      });
-      sessions.set(name,pending);
-    }
+      return{session:await NativeGraphWasmSession.create(model),provider:'native-wasm'};
+    })());
     return sessions.get(name);
-  }
-  function getSession(name){
-    if(closing||released)return Promise.reject(Error('解放済みの実行器です。'));
-    return sessionFor(name);
   }
   async function executeGraph(name,rows){
     // A common-battle caller supplies cancellation to its controller instead:
@@ -105,9 +91,7 @@ export function createGraphExecutor({models,backend='onnxruntime-wasm',ortVersio
       const failures=validateModelInput(model.ir,row);
       if(failures.length)throw Error(`${name} 入力${lane}: ${failures.join('; ')}`);
     });
-    // Work queued before release began still completes atomically. Public
-    // submissions after that boundary are rejected by runGraph/getSession.
-    const entry=await sessionFor(name),feeds=feedsFor(model,rows);
+    const entry=await getSession(name),feeds=feedsFor(model,rows);
     let output,inputs;
     try{
       if(entry.ort){
@@ -115,7 +99,6 @@ export function createGraphExecutor({models,backend='onnxruntime-wasm',ortVersio
         output=await entry.session.run(inputs);counts.ortCalls++;counts[entry.provider==='onnxruntime-webgpu'?'webgpuCalls':'wasmCalls']++;
       }else{output=await entry.session.run(feeds);counts.nativeCalls++;}
       executedModelProviders.set(name,entry.provider);
-      if(backend==='native-wasm'&&entry.provider==='onnxruntime-wasm')explicitOrtModels.add(name);
       if(backend==='onnxruntime-webgpu'&&entry.provider==='onnxruntime-wasm')explicitCpuModels.add(name);
       counts.rows+=rows.length;
       return outputRows(output,rows.length);
@@ -125,7 +108,6 @@ export function createGraphExecutor({models,backend='onnxruntime-wasm',ortVersio
     }
   }
   function runGraph(name,rows){
-    if(closing||released)return Promise.reject(Error('解放済みの実行器です。'));
     // Independent battle lanes may reach this adapter concurrently. The WASM
     // backend shares one Emscripten runtime; overlap of two session.run calls
     // can leave both promises pending. Keep N-lane graph batches intact while
@@ -133,89 +115,10 @@ export function createGraphExecutor({models,backend='onnxruntime-wasm',ortVersio
     const pending=runTail.then(()=>executeGraph(name,rows));
     runTail=pending.then(()=>{},()=>{});return pending;
   }
-  return{runGraph,getSession,getModel,counts,explicitOrtModels,explicitCpuModels,executedModelProviders,
-    get gpuAdapterInfo(){return gpuAdapterInfo;},
-    get sessionStats(){return{...sessionCounts,loaded:sessions.size};},
-    async resetMetrics(){
-      if(closing||released)throw Error('解放済みの実行器です。');
-      await runTail;
-      if(closing||released)throw Error('解放済みの実行器です。');
-      for(const name of Object.keys(counts))counts[name]=0;
-      explicitOrtModels.clear();explicitCpuModels.clear();executedModelProviders.clear();
-    },
-    release(){
-      if(!releasePromise){
-        closing=true;
-        releasePromise=(async()=>{
-          await runTail;released=true;
-          for(const pending of sessions.values())try{const {session}=await pending;await session.release?.();sessionCounts.released++;}catch{}
-          sessions.clear();
-        })();
-      }
-      return releasePromise;
-    }
-  };
-}
-
-// Release assets have already bound every ONNX byte string to its SHA-256.
-// These immutable model identities, the shared program and the provider define
-// session compatibility. Actor rows, definitions, RNG and resource state are
-// deliberately absent: those remain fresh inputs to each operation.
-async function executorIdentity({models,programHash,backend,ortVersion}){
-  if(!/^[a-f0-9]{64}$/i.test(programHash??''))throw Error('実行器の共通プログラムSHA-256がありません。');
-  const list=models instanceof Map?[...models.values()]:models;
-  if(!Array.isArray(list)||!list.length)throw Error('実行器のモデル定義がありません。');
-  const manifest=list.map(model=>{
-    if(!model.name||model.ir?.name!==model.name||!/^[a-f0-9]{64}$/i.test(model.sha256??''))throw Error('実行器のモデルSHA-256がありません: '+model.name);
-    return{name:model.name,sha256:model.sha256,executionProvider:model.executionProvider??null};
-  }).sort((a,b)=>a.name.localeCompare(b.name));
-  if(new Set(manifest.map(model=>model.name)).size!==manifest.length)throw Error('実行器のモデル名が重複しています。');
-  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify({programHash,models:manifest,backend,ortVersion})));
-  return Array.from(new Uint8Array(bytes),byte=>byte.toString(16).padStart(2,'0')).join('');
-}
-
-// One operation owns the executor at a time. Only immutable sessions survive
-// the lease; cancellation/progress callbacks and graph counts are replaced or
-// cleared before the next operation. No battle or presentation row is retained.
-export function createGraphExecutorCache(){
-  let current=null,operationTail=Promise.resolve(),callbacks=null;
-  const lifetime={createdExecutors:0,releasedExecutors:0,releasedSessions:0};
-  const snapshot=()=>({...lifetime,active:current?{identity:current.identity,executorId:current.executorId,backend:current.backend,sessionStats:current.executor.sessionStats}:null});
-  async function releaseCurrent(){
-    if(!current)return 0;
-    const old=current;current=null;await old.executor.release();
-    const released=old.executor.sessionStats.released;
-    lifetime.releasedExecutors++;lifetime.releasedSessions+=released;return released;
-  }
-  function enqueue(operation){
-    const pending=operationTail.then(operation);operationTail=pending.then(()=>{},()=>{});return pending;
-  }
-  return{
-    snapshot,
-    withExecutor(options,operation){
-      return enqueue(async()=>{
-        const backend=options.backend??'onnxruntime-wasm',ortVersion=options.ortVersion??'1.31.1';
-        const identity=await executorIdentity({...options,backend,ortVersion});
-        // A supplied ORT implementation is also an identity boundary, even if
-        // the caller gives two implementations the same display version.
-        const reused=current?.identity===identity&&current.ortRuntime===options.ortRuntime;
-        const releasedPreviousSessions=reused?0:await releaseCurrent();
-        callbacks={onProgress:options.onProgress,shouldStop:options.shouldStop};
-        if(!reused){
-          const executor=createGraphExecutor({...options,backend,ortVersion,onProgress:entry=>callbacks?.onProgress?.(entry),shouldStop:()=>callbacks?.shouldStop?.()});
-          current={identity,backend,ortRuntime:options.ortRuntime,executor,executorId:++lifetime.createdExecutors};
-        }
-        const entry=current;
-        try{
-          await entry.executor.resetMetrics();
-          return await operation(entry.executor,{identity,executorId:entry.executorId,reused:!!reused,releasedPreviousSessions,sessionStatsBefore:entry.executor.sessionStats});
-        }catch(error){
-          // Invalid input cannot silently leave a failed backend/session in
-          // the next operation. Completed controller stops return normally.
-          await releaseCurrent();throw error;
-        }finally{callbacks=null;}
-      });
-    },
-    release(){return enqueue(async()=>{await releaseCurrent();return snapshot();});}
-  };
+  return{runGraph,getSession,getModel,counts,explicitOrtModels,explicitCpuModels,executedModelProviders,get gpuAdapterInfo(){return gpuAdapterInfo;},async release(){
+    await runTail;
+    released=true;
+    for(const pending of sessions.values())try{const {session}=await pending;await session.release?.();}catch{}
+    sessions.clear();
+  }};
 }

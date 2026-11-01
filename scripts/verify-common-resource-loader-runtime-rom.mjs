@@ -58,3 +58,4 @@ try{
   }
 }finally{await executor.release();}
 report.passed=report.mismatches===0&&report.boundaries.every(x=>x.passed);const text=JSON.stringify(report,null,2)+'\n';if(option('--out'))await writeFile(option('--out'),text);console.log(text);if(!report.passed)process.exitCode=1;
+

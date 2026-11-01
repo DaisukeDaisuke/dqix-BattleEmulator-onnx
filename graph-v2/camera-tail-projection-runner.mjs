@@ -5,7 +5,12 @@ export const CAMERA_TAIL_PROJECTION_MODELS=[...new Set([...CAMERA_WORLD_PREFIX_M
 // scene+0xdf4 and camera(scene+0xb94)+0x260 are the same byte.
 // Keep the required movement gate bound to computed camera initialization.
 export function cameraTailInitial(c){const row=cameraWorldInitial(c);return{...row,cameraInitialized:!!c.cameraInitialized,sceneMovementEnabled:!!c.cameraInitialized,advanceDelay:c.advanceDelay??0,advanceState:c.advanceState??0,roster:row.roster.map(r=>({...r,flagsC4:r.flagsC4??0})),lookupObjects:row.lookupObjects.map(r=>({...r,flagsC4:r.flagsC4??0}))};}
-function record(state,id){return state.rawActions.map(hex=>Array.from({length:52},(_,i)=>parseInt(hex.slice(i*2,i*2+2),16))).find(b=>(b[4]+256*b[5])%4096===id);}
+function record(state,id){
+ // Resolve the immutable definition by its two ID bytes before decoding the
+ // selected52-byte record. Preserve first-match order and all original bytes.
+ const hex=state.rawActions.find(h=>(parseInt(h.slice(8,10),16)+256*parseInt(h.slice(10,12),16))%4096===id);
+ return hex===undefined?undefined:Array.from({length:52},(_,i)=>parseInt(hex.slice(i*2,i*2+2),16));
+}
 export async function createCameraTailProjectionRunner({runGraph,getModel,onTrace,admissionFactory}={}){
  let graphCalls=0;const runtime={getModel,onTrace,admissionFactory,runGraph:async(...args)=>{graphCalls++;return runGraph(...args);}},worldRunner=await createCameraWorldPrefixRunner(runtime),irs=new Map();
  for(const name of CAMERA_TAIL_PROJECTION_MODELS.slice(-4))irs.set(name,await getModel(name));

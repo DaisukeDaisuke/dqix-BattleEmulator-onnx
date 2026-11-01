@@ -40,7 +40,7 @@ async function initial(c){
 }
 try{
   const resumeIds=new Set(['s019bm-capacity-56','s019bm-live-model-capacity-712','mp0201bm.chr-live-model','original-nsbmd-replace-capacity-184','original-nsbmd-replace-capacity-4096']);
-  const jobs=[...source.results.map(original=>({original,resume:false})),...source.results.filter(o=>resumeIds.has(o.case.id)).map(original=>({original,resume:true}))];
+  const jobs=[...source.results.map(original=>({original,resume:false})),...source.results.filter(o=>resumeIds.has(o.case.id)||o.case.verifyJsonResume===true).map(original=>({original,resume:true}))];
   for(const {original,resume} of jobs){
     const c=original.case;if(!original.ok||!original.strictInitializedMemory||!original.completeFunctionExecuted)throw Error('A strict complete original caller is required: '+c.id);
     let input=await initial(c);const before=report.mismatches;allocations=[];

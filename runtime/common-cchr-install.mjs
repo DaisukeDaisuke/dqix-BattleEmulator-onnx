@@ -6,6 +6,7 @@ import {createCommonBCFGRunner} from './common-bcfg.mjs';
 import {createCommonSafeAllocatorRunner} from './common-safe-allocator.mjs';
 import {createCommonAnimation3DDataRunner,COMMON_ANIMATION3D_DATA_MODELS} from './common-animation3d-data.mjs';
 import {createCommonModelFileRunner,COMMON_MODEL_FILE_MODELS} from './common-model-file.mjs';
+import {validateGraphInputs} from '../graph-v2/input-domains.mjs';
 
 export const COMMON_CCHR_INSTALL_MODELS=[...new Set(['rom-common-cchr-records','rom-common-bcfg','rom-common-hmrf-allocator',...COMMON_ANIMATION3D_DATA_MODELS,...COMMON_MODEL_FILE_MODELS])];
 const clone=x=>structuredClone(x),scalar=(o,k)=>Number(o[k]?.[0]),word=p=>p[0]+65536*p[1],pair=n=>[n%65536,Math.floor(n/65536)],pointerBytes=p=>p.flatMap(v=>[v%256,Math.floor(v/256)]);
@@ -17,7 +18,7 @@ function archiveMembers(value,pointerU16){
   const bytes=Uint8Array.from(value),view=new DataView(bytes.buffer),narc=inspectOriginalNarc(bytes);let at=view.getUint16(12,true),image=-1;
   for(let i=0;i<view.getUint16(14,true);i++){if(String.fromCharCode(...bytes.subarray(at,at+4))==='GMIF')image=at+8;at+=view.getUint32(at+4,true);}
   requireData(image>=0&&word(pointerU16)+bytes.length<=0xffffffff,'Original archive pointer and image bounds are required');
-  return narc.members.map(m=>({...m,pointerU16:pair(word(pointerU16)+image+m.byteOffset)}));
+  return{fileCount:narc.fileCount,members:narc.members.map(m=>({...m,pointerU16:pair(word(pointerU16)+image+m.byteOffset)}))};
 }
 
 export function createCommonCchrInstallRunner(options){
@@ -25,6 +26,7 @@ export function createCommonCchrInstallRunner(options){
   async function call(input){
     const name='rom-common-cchr-records',model=await getModel(name);requireData(model,'The shared type1 CCHR record graph is required');
     const values={...model.contract.defaults,...input},feeds=Object.fromEntries(model.inputs.map(d=>[d.name,Array.isArray(values[d.name])?values[d.name]:[values[d.name]]]));
+    const errors=validateGraphInputs(model.contract,feeds);if(errors.length)boundary('CCHR record operands exceed the exact graph domain: '+errors.join('; '));
     const out=(await runGraph(name,[feeds]))[0];await onTrace?.({model:name,inputs:[clone(feeds)],outputs:[clone(out)]});requireData(!!scalar(out,'supported'),'Invalid type1 CCHR record input');return out;
   }
   return{
@@ -41,10 +43,9 @@ export function createCommonCchrInstallRunner(options){
       async function allocate(request){const result=await allocator.allocate(allocatorState,request);if(!result.complete)boundary(result.pending);syncAllocator();const record={phase,requestBytesU16:[...request],returnPointerU16:[...result.pointerU16],returnedNonNull:result.allocated};allocations.push(record);return{...result,...record};}
       async function packageStore(operation,extra={}){const result=await call({operation,packageBytes:packageBytes??Array(44).fill(0),packagePointerU16,packageId,...extra});if(packageBytes){packageBytes=[...result.nextPackageBytes];write(packagePointerU16,packageBytes,result.packageWrittenMaskBytes);}return result;}
       async function loadPackage(){
-        const members=archiveMembers(archiveBytes,archivePointerU16);
+        const{members,fileCount}=archiveMembers(archiveBytes,archivePointerU16);
         const modelMember=members.find(m=>m.path.includes('.nsbmd'));
         if(modelMember){phase='model';const request=await packageStore(10),model=await allocate(request.requestBytesU16),stored=await packageStore(11,{objectBytes:read(objectPointerU16,172),allocationPointerU16:model.returnPointerU16});write(objectPointerU16,stored.nextObjectBytes,stored.objectWrittenMaskBytes);if(scalar(stored,'allocationFailed'))return false;const loader=createCommonModelFileRunner({getModel,runGraph,onTrace,read,write,boundary});await loader.process({state,member:modelMember,rawFilePointerU16:modelMember.pointerU16,modelPointerU16:model.returnPointerU16});}
-        if(members.length>80||members.some(m=>m.path.length+5>=80))boundary('The original CCHR fallback filename lookup requires its own producer');
         phase='package';const request=await packageStore(0),allocated=await allocate(request.requestBytesU16);
         if(!allocated.returnedNonNull)return false;
         packagePointerU16=[...allocated.returnPointerU16];packageBytes=read(packagePointerU16,44);
@@ -52,6 +53,13 @@ export function createCommonCchrInstallRunner(options){
         const bcfg=createCommonBCFGRunner({runGraph,getModel,onTrace,allocate,write}),member=members.find(m=>m.path.includes('.bcfg'));
         phase='bcfg';const script=member?decodeOriginalAnimationScript(member.bytes):null,result=await bcfg.load({script,bcfgBytes:packageBytes.slice(4,36)});
         if(!result.complete)boundary(result.pending);packageBytes.splice(4,32,...result.bcfgBytes);write(pair(word(packagePointerU16)+4),result.bcfgBytes);
+        phase='filename-lookup';const lookup=await packageStore(12,{archiveFileCount:fileCount,maximumFilePathBytes:members.reduce((n,m)=>Math.max(n,m.path.length),0),hasAllIndexedFilePaths:members.length===fileCount&&members.every((m,i)=>m.index===i)});
+        if(!scalar(lookup,'filenameLookupFits'))boundary('Original CCHR truncated or unmapped filename lookup requires its actual path producer');
+        // Both admitted original modes return the first case-sensitive exact
+        // path match in file-ID order. The checksum cache only narrows candidates
+        // before strcmp; the fallback scans those same names directly.
+        const filenameLookupMode=scalar(lookup,'useChecksumLookup')?'checksum-cache':scalar(lookup,'requiresSequentialFileLookup')?'sequential':null;
+        requireData(filenameLookupMode,'The original CCHR filename mode must come from its shared graph');
         phase='references';const refsRequest=await packageStore(2),referenceAllocation=await allocate(refsRequest.requestBytesU16);
         const refResult=await packageStore(3,{allocationPointerU16:referenceAllocation.returnPointerU16});
         if(scalar(refResult,'allocationFailed'))return false;

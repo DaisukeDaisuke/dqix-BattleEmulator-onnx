@@ -34,7 +34,7 @@ export function createCommonAnimationProgramBuilder({runGraph,getModel,onTrace}=
     if(!current)return{complete:false,pending:'Original animation node precedes its root program'};
     const stringIndex=scalar(output,'stringParameterIndex'),stringPointerOffset=scalar(output,'stringPointerOffset');let stringBytes=null;
     if(stringIndex>=0){stringBytes=instruction.parameters[stringIndex]?.stringBytes;if(!Array.isArray(stringBytes))return{complete:false,pending:'Original animation string pointer is not valid'};stringBytes=scalar(output,'replaceCharacterSuffix')?originalCharacterSuffix(stringBytes):[...stringBytes];}
-    current.codes.push({opcode:instruction.opcode,parameter:scalar(output,'parameter'),parameterKnown:!!scalar(output,'parameterKnown'),nodeByteLength:scalar(output,'nodeByteLength'),payloadBaseOffset:0,payloadU16:[...output.payloadU16],payloadMaskU16:[...output.payloadMaskU16],stringPointerOffset,stringBytes,sourceInstruction:index,rawParameters:clone(instruction.parameters)});
+    current.codes.push({opcode:instruction.opcode,parameter:scalar(output,'parameter'),parameterKnown:!!scalar(output,'parameterKnown'),nodeByteLength:scalar(output,'nodeByteLength'),payloadU16:[...output.payloadU16],payloadMaskU16:[...output.payloadMaskU16],stringPointerOffset,stringBytes,sourceInstruction:index,rawParameters:clone(instruction.parameters)});
    }
   }
   return{complete:true,programs,program:programs[0]??null,decoded,linkedProgramBuilt:true,scope:'The actual typed node sequence, written payload bits and referenced string bytes are computed. Heap addresses, untouched allocator bytes, resource effects and execution of the nonempty program remain separate state producers.'};

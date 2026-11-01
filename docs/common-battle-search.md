@@ -15,13 +15,13 @@ The adapter requests uncertainty only at a genuine external row+4 input boundary
   id: lane.id,
   status: 'needs-row4',
   state: computedState,
-  boundary: {id: 'turn:1:camera:0', kind: 'camera-row4', wordCount: 4}
+  boundary: {id: 'turn:1/camera:0', kind: 'camera-row4', wordCount: 4}
 }
 ```
 
-The current camera contract uses four exact unsigned 32-bit words. All bit patterns, including values above `0x7fffffff`, are admitted. Without explicit search conditions, all four words range from `0` through `4294967295`: exactly `2^128` combinations. The module represents this domain lazily with decimal-string counters, so it never allocates the full Cartesian product. It does not assert that this enormous domain can be exhausted in a practical time.
+The camera adapter declares the actual live row count at each consuming boundary, currently from 1 through 12, and the corresponding ordered `rowIds`. It requests one exact unsigned 32-bit word per declared row. All bit patterns, including values above `0x7fffffff`, are admitted. Without explicit search conditions, each word ranges from `0` through `4294967295`: exactly `2^(32 * wordCount)` combinations. Four rows, for example, produce `2^128` combinations; four is not a fixed product-wide row count. The module represents this domain lazily with decimal-string counters, so it never allocates the full Cartesian product. It does not assert that this enormous domain can be exhausted in a practical time.
 
-Explicit conditions have this form:
+For a boundary with four actual rows, explicit conditions have this form:
 
 ```js
 const domains = {
@@ -39,7 +39,7 @@ const domains = {
 };
 ```
 
-An explicit restriction is recorded as a search condition, never inferred from a sample or silently substituted for the full range. Axes enumerate in lexicographic order with the last word changing fastest. Known internal updates are carried in the computed state and must not be promoted to new independent uncertainty inputs. The adapter decides when an actual new external boundary exists; the scheduler does not invent one per frame, graph call or turn.
+An explicit restriction is recorded as a search condition, never inferred from a sample or silently substituted for the full range. Its number of words must exactly match the consuming boundary; a mismatched default condition blocks that branch with an input error instead of discarding or inventing row values. Axes enumerate in lexicographic order with the last word changing fastest. Known internal updates are carried in the computed state and must not be promoted to new independent uncertainty inputs. The adapter decides when an actual new external boundary exists; the scheduler does not invent one per frame, graph call or turn.
 
 ## Batch adapter contract
 

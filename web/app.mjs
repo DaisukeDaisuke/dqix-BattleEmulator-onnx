@@ -14,7 +14,7 @@ const stringify=value=>JSON.stringify(value,(_,item)=>typeof item==='bigint'?ite
 const seedHex=value=>Array.from(value).reduce((seed,byte,index)=>seed+(BigInt(byte)<<BigInt(index*8)),0n).toString(16).padStart(16,'0');
 const seedBytes=seed=>Array.from({length:8},(_,index)=>Number(seed>>BigInt(index*8)&255n));
 const scalar=value=>Array.isArray(value)||ArrayBuffer.isView(value)?value[0]:value;
-let current,busy=false,stopRequested=false,lastResult=null,localFrameResources=null,executorCache=null;
+let current,busy=false,stopRequested=false,lastResult=null,localFrameResources=null;
 const continuationEvents={contract:'dq9-functional-presentation-continuation-v1',overlayReload:{contract:'dq9-original-overlay25-image-reloaded-v1'},loaderCompleted:{contract:'dq9-original-overlay25-load-complete-v1'}};
 
 function status(text,kind=''){$('status').textContent=text;$('status').className='status '+kind;}
@@ -130,7 +130,7 @@ function readRequest(){
   let frameResources;
   if(current.kind==='battle'&&input.camera?.mode==='functional-frame'){
     if(limit!==1)throw Error('フレーム実行の初回は1ターンを指定してください。次のターンは保持した結果のコマンド確定と演出続行から進めます。');
-    if(!['dq9-empty-script-static-font-functional-frame-v1','dq9-script-static-font-functional-frame-v2'].includes(input.camera.frameInput?.contract))throw Error('フレーム実行の初期入力例を選ぶか、camera.frameInputの契約と初期状態を指定してください。');
+    if(input.camera.frameInput?.contract!=='dq9-empty-script-static-font-functional-frame-v1')throw Error('フレーム実行の初期入力例を選ぶか、camera.frameInputの契約と初期状態を指定してください。');
     const inline=!!input.camera.frameInput.assets?.['actmsg.nat']&&Array.isArray(input.camera.frameInput.fontTables);
     if(!inline&&!localFrameResources)throw Error('フレーム実行にはローカルROMのメッセージ・静的フォントが必要です。ROMファイルを選択してください。');
     if(!inline){frameResources=localFrameResources;input.camera.frameInput.assetManifest=structuredClone(localFrameResources.assetManifest);}
@@ -204,10 +204,10 @@ async function executeBattleChunks(request,run){
 }
 
 async function executeBackend(request,backend){
-  const initialized=performance.now(),{createGraphExecutorCache}=await loadModule('web/graph-executor.mjs');
-  executorCache??=createGraphExecutorCache();
-  return executorCache.withExecutor({models,programHash:assets.commonProgramHash,backend,ortVersion:assets.ortVersion,onProgress:entry=>log('初期化: '+entry.name+(entry.provider?' / '+entry.provider:'')),shouldStop:request.mode.kind==='battle'?undefined:()=>stopRequested},async(executor,cache)=>{
-    let run;
+  const initialized=performance.now(),{createGraphExecutor}=await loadModule('web/graph-executor.mjs');
+  const executor=createGraphExecutor({models,backend,ortVersion:assets.ortVersion,onProgress:entry=>log('初期化: '+entry.name+(entry.provider?' / '+entry.provider:'')),shouldStop:request.mode.kind==='battle'?undefined:()=>stopRequested});
+  let run;
+  try{
     if(request.mode.kind==='battle'){
       const {createCommonBattleRunner}=await loadModule('runtime/common-battle.mjs');
       const {createCommonFunctionalPresentationRunner}=await loadModule('runtime/common-functional-presentation.mjs');
@@ -249,27 +249,16 @@ async function executeBackend(request,backend){
     }
     const numericOnly=request.mode.kind==='battle'&&(request.boundary==='numeric-turn'||request.rows.every(row=>row.camera?.mode==='numeric-only'));
     const required=request.mode.kind==='battle'?numericOnly?[...new Set(Object.values(assets.commonProgram.operations))]:assets.commonProgram.modules.map(module=>module.name):request.mode.kind==='camera'?request.mode.models:[request.mode.model.name];
-    for(const [index,name]of required.entries()){
-      if(stopRequested)break;
-      const before=executor.sessionStats.created;await executor.getSession(name);
-      // Creating a session can take appreciable time. Already loaded models
-      // only need occasional UI yields, not one clamped timer per model.
-      if(executor.sessionStats.created!==before||index%16===15)await yieldUi();
-    }
+    for(const name of required){if(stopRequested)break;await executor.getSession(name);await yieldUi();}
     const initializationMilliseconds=performance.now()-initialized;
     let warmupMilliseconds=0;
     if(request.warmup&&!stopRequested){status('同じ初期状態の1入力でウォームアップしています。');await yieldUi();const start=performance.now();await run(request.rows.slice(0,1));warmupMilliseconds=performance.now()-start;}
-    // Warmup and earlier button presses do not contribute to this operation's
-    // count or provider report, even when their sessions remain loaded.
-    await executor.resetMetrics();
     status(format(request.count,0)+'入力を共通処理で実行しています。');await yieldUi();
-    const start=performance.now(),result=request.mode.kind==='battle'?await executeBattleChunks(request,run):await run(request.rows),elapsedMilliseconds=performance.now()-start;
+    const countsBefore={...executor.counts},start=performance.now(),result=request.mode.kind==='battle'?await executeBattleChunks(request,run):await run(request.rows),elapsedMilliseconds=performance.now()-start;
     if(!Array.isArray(result.rows)||result.rows.length!==request.count)throw Error('実行結果の入力数が一致しません。');
     if(request.mode.kind==='battle'&&result.programHash!==undefined&&result.programHash!==assets.commonProgramHash)throw Error('実行した共通プログラムのハッシュが公開定義と異なります。');
-    const sessionStats=executor.sessionStats;
-    return{...result,backend,initializationMilliseconds,warmupMilliseconds,elapsedMilliseconds,graphExecutionCounts:{...executor.counts},explicitOrtModels:[...executor.explicitOrtModels],explicitCpuModels:[...executor.explicitCpuModels],executedModelProviders:Object.fromEntries(executor.executedModelProviders),gpuAdapterInfo:executor.gpuAdapterInfo,implicitCpuFallback:false,seedFiltering:false,
-      sessionCache:{identity:cache.identity,executorId:cache.executorId,reused:cache.reused,createdSessions:sessionStats.created-cache.sessionStatsBefore.created,loadedSessions:sessionStats.loaded,releasedPreviousSessions:cache.releasedPreviousSessions}};
-  });
+    return{...result,backend,initializationMilliseconds,warmupMilliseconds,elapsedMilliseconds,graphExecutionCounts:Object.fromEntries(Object.keys(executor.counts).map(key=>[key,executor.counts[key]-countsBefore[key]])),explicitOrtModels:[...executor.explicitOrtModels],explicitCpuModels:[...executor.explicitCpuModels],executedModelProviders:Object.fromEntries(executor.executedModelProviders),gpuAdapterInfo:executor.gpuAdapterInfo,implicitCpuFallback:false,seedFiltering:false};
+  }finally{await executor.release();}
 }
 
 function compareResults(a,b){
@@ -352,7 +341,6 @@ async function execute(compare=false,continuation=null){
   finally{controls(false);}
 }
 function stop(){if(!busy)return;stopRequested=true;$('stop').disabled=true;status('現在のグラフ呼出しが戻った時点で停止します。');}
-async function releaseExecutor(){if(busy)throw Error('実行中は実行器を解放できません。');return executorCache?executorCache.release():{createdExecutors:0,releasedExecutors:0,releasedSessions:0,active:null};}
 for(const[kind,label]of [['battle','共通戦闘への入力'],['camera','カメラ単体検査'],['graph','数値グラフ単体検査']]){
   const group=document.createElement('optgroup');group.label=label;
   for(const mode of modes.filter(item=>item.kind===kind)){const option=document.createElement('option');option.value=mode.id;option.textContent=mode.titleJa??mode.id;group.append(option);}
@@ -361,7 +349,7 @@ for(const[kind,label]of [['battle','共通戦闘への入力'],['camera','カメ
 $('inventory').textContent=`共通戦闘プログラム1件 ／ 入力定義${assets.encounters.length}件 ／ 共有モジュール${assets.commonProgram.modules.length}件`;
 $('definitions-json').value=stringify(assets.definitions);
 $('action-coverage').textContent=stringify(assets.actionCoverage??{});
-window.DQ9Release={ready:true,assets,modes,selectMode,loadLocalRom,loadSavedResult,run:()=>execute(false),continueNumeric:()=>execute(false,'numeric-turn'),continuePresentation:()=>execute(false,'presentation'),compare:()=>execute(true),stop,releaseExecutor,get executorCacheState(){return executorCache?.snapshot()??null;},get busy(){return busy;},get localAssetManifest(){return structuredClone(localFrameResources?.assetManifest??null);},lastResult:null};
+window.DQ9Release={ready:true,assets,modes,selectMode,loadLocalRom,loadSavedResult,run:()=>execute(false),continueNumeric:()=>execute(false,'numeric-turn'),continuePresentation:()=>execute(false,'presentation'),compare:()=>execute(true),stop,get busy(){return busy;},get localAssetManifest(){return structuredClone(localFrameResources?.assetManifest??null);},lastResult:null};
 $('mode').addEventListener('change',()=>selectMode($('mode').value));$('preset').addEventListener('change',applyPreset);$('reset').addEventListener('click',applyPreset);
 $('reset-definitions').addEventListener('click',()=>{$('definitions-json').value=stringify(assets.definitions);});
 $('run').addEventListener('click',()=>execute(false).catch(()=>{}));$('compare').addEventListener('click',()=>execute(true).catch(()=>{}));$('stop').addEventListener('click',stop);
@@ -369,7 +357,5 @@ $('rom-file').addEventListener('change',()=>loadLocalRom($('rom-file').files[0])
 $('next-numeric').addEventListener('click',()=>execute(false,'numeric-turn').catch(()=>{}));
 $('continue-presentation').addEventListener('click',()=>execute(false,'presentation').catch(()=>{}));
 $('result-file').addEventListener('change',event=>loadSavedResult(event.target.files?.[0]).catch(()=>{}));
-$('backend').addEventListener('change',()=>releaseExecutor().catch(error=>status(String(error.message??error),'bad')));
-window.addEventListener('pagehide',()=>{void executorCache?.release();});
 $('download').addEventListener('click',()=>{if(!lastResult)return;const url=URL.createObjectURL(new Blob([stringify(lastResult)+'\n'],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download='dq9-common-battle-result.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),0);});
 if(!modes.length)throw Error('入力定義がありません。');selectMode(modes[0].id);

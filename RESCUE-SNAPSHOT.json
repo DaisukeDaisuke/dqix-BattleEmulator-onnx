@@ -1,0 +1,1588 @@
+{
+  "purpose": "Rescue snapshot only; incomplete work preserved without merging into main.",
+  "sourceRoot": "/workspace/scratch/b192bd8a0ea3/project",
+  "capturedAt": "2026-11-01T10:01:20.734Z",
+  "baseCommit": "124c855db09fbeeeb75812eab9c678fbacf118c9",
+  "files": [
+    {
+      "path": ".github/workflows/convert-release.yml",
+      "sha": "5c175afe19720ea9c4263527467702785fb67031",
+      "bytes": 1414
+    },
+    {
+      "path": ".gitignore",
+      "sha": "1b419f6385a0b8cdc1d2eb2c9c5817b7199e8634",
+      "bytes": 165
+    },
+    {
+      "path": "LICENSE",
+      "sha": "fdddb29aa445bf3d6a5d843d6dd77e10a9f99657",
+      "bytes": 1211
+    },
+    {
+      "path": "README.md",
+      "sha": "62c70c6f6300266b4a5f54537a2c5276d43dc82c",
+      "bytes": 29944
+    },
+    {
+      "path": "data/battle-presets.mjs",
+      "sha": "c39dc05354791012b86fffd81d1a1d96de18f7c2",
+      "bytes": 50588
+    },
+    {
+      "path": "data/camera-constants.mjs",
+      "sha": "a2e43d7dbf62fe712a2081ccf0ee8409dc25111b",
+      "bytes": 51180
+    },
+    {
+      "path": "data/camera-modes.mjs",
+      "sha": "7bbe8bd665eddb02465299ff16e4ea33685b5cdc",
+      "bytes": 49097
+    },
+    {
+      "path": "data/common-battle.mjs",
+      "sha": "e963f91e66d2e874925dc3f948464e3758a6a84e",
+      "bytes": 10043
+    },
+    {
+      "path": "data/common-functional-frame-example.mjs",
+      "sha": "31795643a5083edcd0c731066f17a1a567b1d03f",
+      "bytes": 2576
+    },
+    {
+      "path": "data/common-ordinary-presentation.mjs",
+      "sha": "efc4b73c61c114bdd70bcaf1c8d308260bdb65ee",
+      "bytes": 1104
+    },
+    {
+      "path": "data/common-presentation-example.mjs",
+      "sha": "2e1faf8ed64c84a9701ae993ab8cc962ca177930",
+      "bytes": 3342
+    },
+    {
+      "path": "data/dispel-mask.mjs",
+      "sha": "501eb59b41b36463bbb89ff6c5c0a637dcbb052a",
+      "bytes": 2075
+    },
+    {
+      "path": "data/giyumei-initial.mjs",
+      "sha": "2754fd083670af6adde9d1b92374f38134b79a43",
+      "bytes": 4119
+    },
+    {
+      "path": "data/graph-inputs.mjs",
+      "sha": "40d9abf9961f19aa023807d0eb1b9daffe034d21",
+      "bytes": 74200
+    },
+    {
+      "path": "data/nsbxx-runtime.mjs",
+      "sha": "274824c80674c272daf1d71f841f686e214fc4d6",
+      "bytes": 578
+    },
+    {
+      "path": "data/source-authority.mjs",
+      "sha": "785d557240019bc87de1b1c5622f73490f132365",
+      "bytes": 22224
+    },
+    {
+      "path": "data/vram-runtime.mjs",
+      "sha": "030c6073b53dfbd70f405182e7432da13d5dddb1",
+      "bytes": 501
+    },
+    {
+      "path": "docs/common-battle-camera-joint.md",
+      "sha": "76170edd17713e8dd52123823d6128f5c3638055",
+      "bytes": 3680
+    },
+    {
+      "path": "docs/common-battle-search-benchmark.md",
+      "sha": "36c060eff6862ebfca84dae0d9e829b08f4e2256",
+      "bytes": 4704
+    },
+    {
+      "path": "docs/common-battle-search.md",
+      "sha": "b0a6c400597ab1656f4be3d6428a1374bbaf0641",
+      "bytes": 7597
+    },
+    {
+      "path": "docs/common-camera-byte-fields.md",
+      "sha": "8e9ac81c03e0c5e21f90a83284e3ed7f1b556b5c",
+      "bytes": 1828
+    },
+    {
+      "path": "docs/common-camera-capacity.md",
+      "sha": "61bdffbd8a3973380041cc6e77a8893144c85bf7",
+      "bytes": 7494
+    },
+    {
+      "path": "docs/common-camera-continuation.md",
+      "sha": "e62647ef3d7974e5f8765ccf7d063806f39a9fab",
+      "bytes": 3204
+    },
+    {
+      "path": "docs/common-camera-self-target-and-search.md",
+      "sha": "a715e8fe3dd523e579bb6dceaa86af63867a17b8",
+      "bytes": 5284
+    },
+    {
+      "path": "graph-v2/appeal-fields.mjs",
+      "sha": "d67c3f80c45f6585a4b12f022ae576660fbca2f9",
+      "bytes": 406
+    },
+    {
+      "path": "graph-v2/boss-action-rules.mjs",
+      "sha": "ec417e63dddb42d075306609fabc610f59b8bc39",
+      "bytes": 2407
+    },
+    {
+      "path": "graph-v2/boss-phases.mjs",
+      "sha": "ea0b5f0533257d48806b5ccd1630dc4cf2e6aa7c",
+      "bytes": 15917
+    },
+    {
+      "path": "graph-v2/build-ai-boss-target.mjs",
+      "sha": "6f32b249462cd677b2ce9f7d0c7a95e5269566d3",
+      "bytes": 14650
+    },
+    {
+      "path": "graph-v2/build-ai-closed.mjs",
+      "sha": "7a6b97503464ac4c7a1b0bb1910db25a6cf50477",
+      "bytes": 10811
+    },
+    {
+      "path": "graph-v2/build-ai-decision.mjs",
+      "sha": "3e694ba8f395896d2b98e9a3f4d3b39a5e34c9e4",
+      "bytes": 13956
+    },
+    {
+      "path": "graph-v2/build-ai-default-target.mjs",
+      "sha": "f7595c035fb754a3c05f158ea2514e01a2d5d423",
+      "bytes": 10256
+    },
+    {
+      "path": "graph-v2/build-ai-machine.mjs",
+      "sha": "8ae8ab089ee8756f8c555a22432ae007b98e9831",
+      "bytes": 11123
+    },
+    {
+      "path": "graph-v2/build-boss-action.mjs",
+      "sha": "702b98a26b5452c525c960a6c6ea69e6765b7723",
+      "bytes": 23842
+    },
+    {
+      "path": "graph-v2/build-camera-admission-event-commit.mjs",
+      "sha": "d3b1f443e4c8bdfbf0ba25940250f675f1ffda16",
+      "bytes": 2068
+    },
+    {
+      "path": "graph-v2/build-camera-admission-event.mjs",
+      "sha": "2d465abcf010268847f76c4d11e03372184036fe",
+      "bytes": 4076
+    },
+    {
+      "path": "graph-v2/build-camera-admission.mjs",
+      "sha": "5810219117864fd10e72cac2e300fb8ce59d25f6",
+      "bytes": 14498
+    },
+    {
+      "path": "graph-v2/build-camera-common-capacity.mjs",
+      "sha": "b5ee781ae254f59abb457312e0f42b03c3166118",
+      "bytes": 2242
+    },
+    {
+      "path": "graph-v2/build-camera-completion-primitives.mjs",
+      "sha": "14f81bad450a82a5a576ee1b38a1c5a4f5db9b43",
+      "bytes": 7577
+    },
+    {
+      "path": "graph-v2/build-camera-corridor.mjs",
+      "sha": "bccb3e7170e549a0c0466989bed520e9160986fb",
+      "bytes": 7774
+    },
+    {
+      "path": "graph-v2/build-camera-delayed-paint.mjs",
+      "sha": "f95df93a7f32cd1e5232429c746ee28d604185be",
+      "bytes": 5919
+    },
+    {
+      "path": "graph-v2/build-camera-dispatcher.mjs",
+      "sha": "faf03dc6daefb51e1439caf666585f8de36bbece",
+      "bytes": 16416
+    },
+    {
+      "path": "graph-v2/build-camera-double-math.mjs",
+      "sha": "508d7372346acedbb1ddf69273fb740f80e06790",
+      "bytes": 6948
+    },
+    {
+      "path": "graph-v2/build-camera-facing-math.mjs",
+      "sha": "f063b3dc55696c1cabae431da47c66b2e4bb76f7",
+      "bytes": 12206
+    },
+    {
+      "path": "graph-v2/build-camera-fixed-math.mjs",
+      "sha": "e8537726d1265d4f726cf7d95dcc048264d5035c",
+      "bytes": 9847
+    },
+    {
+      "path": "graph-v2/build-camera-follow-continuous.mjs",
+      "sha": "587a3318348e0f8c754c10565300577138c73e56",
+      "bytes": 853
+    },
+    {
+      "path": "graph-v2/build-camera-follow-first.mjs",
+      "sha": "7003cc1723f0e5e1483ba64d95ba12a1bfd64f52",
+      "bytes": 15284
+    },
+    {
+      "path": "graph-v2/build-camera-geometry.mjs",
+      "sha": "74167276817a43f33edf473addf7eebfe7459c8c",
+      "bytes": 6394
+    },
+    {
+      "path": "graph-v2/build-camera-goals.mjs",
+      "sha": "2c7fdf6d613b87229c6b9268e4b76371182af5ab",
+      "bytes": 12428
+    },
+    {
+      "path": "graph-v2/build-camera-graph.mjs",
+      "sha": "15196e4b3c89b76d917d25808e9a00ab1f2ae1b7",
+      "bytes": 6909
+    },
+    {
+      "path": "graph-v2/build-camera-member-goal.mjs",
+      "sha": "c5c5c63a4acd8152428e4ed4b79584214e19f817",
+      "bytes": 19781
+    },
+    {
+      "path": "graph-v2/build-camera-member-wide.mjs",
+      "sha": "e7ad00ba1c38c85f91c129f7787d27edb14ea9d7",
+      "bytes": 1015
+    },
+    {
+      "path": "graph-v2/build-camera-memory-patch.mjs",
+      "sha": "82a067d0260feae08a8bbb80b8d7af1b9e4bea26",
+      "bytes": 5476
+    },
+    {
+      "path": "graph-v2/build-camera-nonmember-goal.mjs",
+      "sha": "e65316a2a838d46049ffcf16100ab6699fd6d4db",
+      "bytes": 9675
+    },
+    {
+      "path": "graph-v2/build-camera-occupancy.mjs",
+      "sha": "aeb87ebf1ac900e91fcc1fe73d9866af8cba9bd1",
+      "bytes": 4109
+    },
+    {
+      "path": "graph-v2/build-camera-parent-control.mjs",
+      "sha": "2cae6f1857e7aa8224d4627389b56a974fa55ea3",
+      "bytes": 4695
+    },
+    {
+      "path": "graph-v2/build-camera-polar-geometry.mjs",
+      "sha": "8bf06aa06c07ffdbf2f0c8956295e78ce8e0d790",
+      "bytes": 6163
+    },
+    {
+      "path": "graph-v2/build-camera-preprocess.mjs",
+      "sha": "84f1a11a0b053a3feb81f305c58174c98aef1bad",
+      "bytes": 10477
+    },
+    {
+      "path": "graph-v2/build-camera-record-bind.mjs",
+      "sha": "f9f9548133116418dea0c17eaf68e016d49689d2",
+      "bytes": 2379
+    },
+    {
+      "path": "graph-v2/build-camera-ring.mjs",
+      "sha": "882e62019931b767fb80ff045ad8823ee4c85c35",
+      "bytes": 3960
+    },
+    {
+      "path": "graph-v2/build-camera-rng.mjs",
+      "sha": "f9042951a652627d4d74ec3ae30953ebb972cc61",
+      "bytes": 7268
+    },
+    {
+      "path": "graph-v2/build-camera-route-byte.mjs",
+      "sha": "68cad40383e9faad85f74d58b925766bf6ce3364",
+      "bytes": 1426
+    },
+    {
+      "path": "graph-v2/build-camera-route-planner.mjs",
+      "sha": "8e9d27dced6ae181db0453cd3d97b7d5d89e5ab1",
+      "bytes": 18721
+    },
+    {
+      "path": "graph-v2/build-camera-route-post.mjs",
+      "sha": "9c3813223cd367475d10fdc4e63b7897f65bbcd7",
+      "bytes": 7990
+    },
+    {
+      "path": "graph-v2/build-camera-selector.mjs",
+      "sha": "b8ea23fe05fedde1840f129737ae358941acd3e9",
+      "bytes": 8664
+    },
+    {
+      "path": "graph-v2/build-camera-tail-projection.mjs",
+      "sha": "ee4489cb65456fca9e8c71cb0584abcacd3fe0ae",
+      "bytes": 10611
+    },
+    {
+      "path": "graph-v2/build-camera-world-behavior.mjs",
+      "sha": "62a68bcaa055d1f55ca8015395f9938338bac498",
+      "bytes": 1939
+    },
+    {
+      "path": "graph-v2/build-camera-world-prefix.mjs",
+      "sha": "99ca1dea92ee91d73914c07e58a2e0fc8fa59bdb",
+      "bytes": 7045
+    },
+    {
+      "path": "graph-v2/build-common-action.mjs",
+      "sha": "d5fcbe6b9d14da604fbb7b3e1b2746eb52a28ec2",
+      "bytes": 92025
+    },
+    {
+      "path": "graph-v2/build-common-after-action.mjs",
+      "sha": "4b8306560fa5493190c948379d6ef80ef12ccc76",
+      "bytes": 11995
+    },
+    {
+      "path": "graph-v2/build-common-animation-actor-resource.mjs",
+      "sha": "1bcf0b77c95b8631620ef70fc3436f252c0e1cdb",
+      "bytes": 7707
+    },
+    {
+      "path": "graph-v2/build-common-animation-node.mjs",
+      "sha": "eca5ec7b21fbb29e6046ed1c0c5d2baa90760619",
+      "bytes": 9708
+    },
+    {
+      "path": "graph-v2/build-common-animation3d-data.mjs",
+      "sha": "ccfeafb36a6f28c3dcbdbab778ff8e82c2ad116b",
+      "bytes": 3138
+    },
+    {
+      "path": "graph-v2/build-common-animation3d-timer.mjs",
+      "sha": "98e2e9f9f06dfb063e2680f03257bfb2fb14edc1",
+      "bytes": 6207
+    },
+    {
+      "path": "graph-v2/build-common-battle.mjs",
+      "sha": "0b3f33c354e5801c4094fcf9e1e5de8f976af191",
+      "bytes": 9799
+    },
+    {
+      "path": "graph-v2/build-common-bcfg.mjs",
+      "sha": "3594d3be531e2468ee090a4bbbf28edeafabecc2",
+      "bytes": 7157
+    },
+    {
+      "path": "graph-v2/build-common-blade-recoil.mjs",
+      "sha": "0fd2ff7f12517003a174e3d43b70944c741dbfef",
+      "bytes": 9578
+    },
+    {
+      "path": "graph-v2/build-common-camera-frame.mjs",
+      "sha": "7b241d166427ee7c64657689be617bb788239266",
+      "bytes": 9830
+    },
+    {
+      "path": "graph-v2/build-common-cchr-records.mjs",
+      "sha": "16193acf71e65c5b11092eb8448319b36e99b8e2",
+      "bytes": 8049
+    },
+    {
+      "path": "graph-v2/build-common-chr-allocation.mjs",
+      "sha": "9faf77578a8e8fd3f20ef9207b85944170320856",
+      "bytes": 3345
+    },
+    {
+      "path": "graph-v2/build-common-control.mjs",
+      "sha": "2967762c6c2146b52b54a789e55e979a4ada0c77",
+      "bytes": 50989
+    },
+    {
+      "path": "graph-v2/build-common-facing.mjs",
+      "sha": "79978c17850ddd7369226cfb3a72187d5032f46e",
+      "bytes": 5009
+    },
+    {
+      "path": "graph-v2/build-common-hmrf-allocator.mjs",
+      "sha": "5ae936b4407438e5f761c29478068fc524c068d0",
+      "bytes": 4415
+    },
+    {
+      "path": "graph-v2/build-common-message-controller.mjs",
+      "sha": "4f20d4bca2626c6637e16f18eb4a0f64e8c4ed7a",
+      "bytes": 16066
+    },
+    {
+      "path": "graph-v2/build-common-message-stack.mjs",
+      "sha": "edc7e7200e21e96210f149b6735f3ddd5d7eee90",
+      "bytes": 2399
+    },
+    {
+      "path": "graph-v2/build-common-message-window.mjs",
+      "sha": "18c8b89890a8cf3c0739f2473eb787964f79253d",
+      "bytes": 10962
+    },
+    {
+      "path": "graph-v2/build-common-model3d.mjs",
+      "sha": "f1492da877cf12b9083a1b3079c0b9366ccb6d9d",
+      "bytes": 6348
+    },
+    {
+      "path": "graph-v2/build-common-nsbxx-animation.mjs",
+      "sha": "0fda38498e187399aaad90d69d1409c2650e4f05",
+      "bytes": 7394
+    },
+    {
+      "path": "graph-v2/build-common-nsbxx-name-tree.mjs",
+      "sha": "33fb92159e35d31c4d91f97c14a156af354788d5",
+      "bytes": 3991
+    },
+    {
+      "path": "graph-v2/build-common-object-animation.mjs",
+      "sha": "4fb63d883b0689b0e5c5c32e6db0e22cb4b9ac11",
+      "bytes": 10059
+    },
+    {
+      "path": "graph-v2/build-common-ordinary-arena.mjs",
+      "sha": "8b38f3cab66ed146c20ca39c7fdfa909c2ba26c7",
+      "bytes": 13446
+    },
+    {
+      "path": "graph-v2/build-common-ordinary-impact.mjs",
+      "sha": "51f6c71209bd3493447b1454c2b6240043e03c9f",
+      "bytes": 5872
+    },
+    {
+      "path": "graph-v2/build-common-periodic-arena.mjs",
+      "sha": "19cff6fdcd786714646f2220307dbd2833230ef7",
+      "bytes": 8129
+    },
+    {
+      "path": "graph-v2/build-common-population.mjs",
+      "sha": "aae6dce6cb9d1fe992a7a782493c61f3a55528fb",
+      "bytes": 22244
+    },
+    {
+      "path": "graph-v2/build-common-presentation-entry.mjs",
+      "sha": "1a1c14952497be9e2c3007bdb68a0a6fb78c034d",
+      "bytes": 19518
+    },
+    {
+      "path": "graph-v2/build-common-presentation-finish.mjs",
+      "sha": "efd452e628cc5dd54fcee27a1fb38d100ac93fd3",
+      "bytes": 16743
+    },
+    {
+      "path": "graph-v2/build-common-presentation-gate.mjs",
+      "sha": "bc1f6925e2676d986b280c9311c05aed61944bb2",
+      "bytes": 9481
+    },
+    {
+      "path": "graph-v2/build-common-presentation-narc-stack.mjs",
+      "sha": "02c6dcbba812d16156bbd1d4c60413d99d613863",
+      "bytes": 4291
+    },
+    {
+      "path": "graph-v2/build-common-presentation-program.mjs",
+      "sha": "abfc3e177bd3b7c2779aee9829c5c51382d6e0a0",
+      "bytes": 5034
+    },
+    {
+      "path": "graph-v2/build-common-presentation-resource.mjs",
+      "sha": "6e72ca15b7c36cce0c804ad0b630223364e726c7",
+      "bytes": 5729
+    },
+    {
+      "path": "graph-v2/build-common-presentation-scheduler.mjs",
+      "sha": "3a3271c6dd1fb3e1d1306273b4e81f7128cdb48f",
+      "bytes": 12060
+    },
+    {
+      "path": "graph-v2/build-common-presentation-stack-stores.mjs",
+      "sha": "b1292dbf0f0cb6cd825d86dbdbadf5eac83e81ca",
+      "bytes": 8263
+    },
+    {
+      "path": "graph-v2/build-common-presentation.mjs",
+      "sha": "5e26dce07bfaa1d397a960f1f611593a53b7d1e3",
+      "bytes": 18279
+    },
+    {
+      "path": "graph-v2/build-common-redirect.mjs",
+      "sha": "3dfd07bac033a9a94b2d023835bfc2a6dbb32ebe",
+      "bytes": 12949
+    },
+    {
+      "path": "graph-v2/build-common-resource-loader.mjs",
+      "sha": "f950b05a14938a1ad1faca65851650731ed0f3db",
+      "bytes": 14207
+    },
+    {
+      "path": "graph-v2/build-common-texture.mjs",
+      "sha": "5df152127786fa4007f517333a3eb58e9af329c8",
+      "bytes": 7608
+    },
+    {
+      "path": "graph-v2/build-common-vram-allocator.mjs",
+      "sha": "58f1bfb41ae62bcc1a6313bb5fff814d12b95845",
+      "bytes": 9507
+    },
+    {
+      "path": "graph-v2/build-common-vram-staging.mjs",
+      "sha": "aa37369a26435491ee7627ec36a53c0420021244",
+      "bytes": 7007
+    },
+    {
+      "path": "graph-v2/build-free-camera-geometry.mjs",
+      "sha": "18ff4a688ab7d04b6b09d39eb9c7f9cfac10dee3",
+      "bytes": 6890
+    },
+    {
+      "path": "graph-v2/build-graphs.mjs",
+      "sha": "84ecbba5d7b500017222c4ccb31ae022d50f32c4",
+      "bytes": 2007
+    },
+    {
+      "path": "graph-v2/build-rom-tables.mjs",
+      "sha": "eba12cdd72dcf07a3cc5a80394fe120083c5c6f3",
+      "bytes": 9470
+    },
+    {
+      "path": "graph-v2/build-turn-boundaries.mjs",
+      "sha": "8829e2135a3e71a64c4587e9c1d95743033b6673",
+      "bytes": 14581
+    },
+    {
+      "path": "graph-v2/build-turn-graphs.mjs",
+      "sha": "5a7c2a9751d749f3d02494a4fffe526c5edc59c6",
+      "bytes": 16465
+    },
+    {
+      "path": "graph-v2/camera-admission-event-runner.mjs",
+      "sha": "9b40dc2011d159758d9ee626ee84ee31f9a7f66d",
+      "bytes": 6270
+    },
+    {
+      "path": "graph-v2/camera-admission-initial.mjs",
+      "sha": "96b91106c579b664b5522a06772e7bde58db14f2",
+      "bytes": 1574
+    },
+    {
+      "path": "graph-v2/camera-admission-phase-runner.mjs",
+      "sha": "a8d5405075586cc09fdbd6ed268df28b35650aa7",
+      "bytes": 708
+    },
+    {
+      "path": "graph-v2/camera-admission-runner.mjs",
+      "sha": "5b84b129228606b30726239623c4362d2da65aea",
+      "bytes": 9789
+    },
+    {
+      "path": "graph-v2/camera-delayed-paint-runner.mjs",
+      "sha": "363e6e526c1fb63e73c7319a5954fd44642c8cee",
+      "bytes": 1510
+    },
+    {
+      "path": "graph-v2/camera-dispatched-phase-runner.mjs",
+      "sha": "2fa08faa10984164c465ae533514b6104a30aebe",
+      "bytes": 4520
+    },
+    {
+      "path": "graph-v2/camera-enclosing-geometry-runner.mjs",
+      "sha": "31757a6f9bd10e3d84be6761a8f8a5ebd4e37b3c",
+      "bytes": 8433
+    },
+    {
+      "path": "graph-v2/camera-enclosing-phase-runner.mjs",
+      "sha": "47ea58776bb800fa41fb7fe68c91123e8d1cf760",
+      "bytes": 3539
+    },
+    {
+      "path": "graph-v2/camera-event-runner.mjs",
+      "sha": "fa34b66dae85bbaf444d544277da08c4d4c36bbb",
+      "bytes": 4060
+    },
+    {
+      "path": "graph-v2/camera-follow-update-runner.mjs",
+      "sha": "c2118e064f9d0b3b4c7e8e7bb6760e74e6f300b6",
+      "bytes": 7314
+    },
+    {
+      "path": "graph-v2/camera-goal-dispatcher.mjs",
+      "sha": "01a1ea9b80e054dea3c513117b8ce62c39ccf0b7",
+      "bytes": 14696
+    },
+    {
+      "path": "graph-v2/camera-goal-tables.mjs",
+      "sha": "a7d4049fea83cb80469216122ad2dc799d34dff2",
+      "bytes": 951
+    },
+    {
+      "path": "graph-v2/camera-member-wide-runner.mjs",
+      "sha": "38e114e8aab59f70b57fdc804ded99f6dead8358",
+      "bytes": 8366
+    },
+    {
+      "path": "graph-v2/camera-nonmember-goal-runner.mjs",
+      "sha": "5aec0ff7f52e5d6926cdde999e5f7f35fc633ff8",
+      "bytes": 3014
+    },
+    {
+      "path": "graph-v2/camera-occupancy-runner.mjs",
+      "sha": "036210c0ffa3ac6b02286403e9bf0f6e4b97ee0e",
+      "bytes": 2826
+    },
+    {
+      "path": "graph-v2/camera-parent-phase-runner.mjs",
+      "sha": "7e2094a6e7e585c356ef92227374707e3f550617",
+      "bytes": 5192
+    },
+    {
+      "path": "graph-v2/camera-parent-runner.mjs",
+      "sha": "26e58162c6a9f0232048ffcdcf6734551b4a0e74",
+      "bytes": 14997
+    },
+    {
+      "path": "graph-v2/camera-phase-runner.mjs",
+      "sha": "17fe1ffc241be3e1b8c9b9c0eb632b167715822a",
+      "bytes": 10149
+    },
+    {
+      "path": "graph-v2/camera-preprocess-runner.mjs",
+      "sha": "9e7939e8d5dd23aac48fcfa66a8762b7acc5c408",
+      "bytes": 6679
+    },
+    {
+      "path": "graph-v2/camera-retained-memory-runner.mjs",
+      "sha": "136df3a03641d9760d208b61d6497e7d47b2a536",
+      "bytes": 5366
+    },
+    {
+      "path": "graph-v2/camera-route-byte-planner.mjs",
+      "sha": "4d14afb7764f614f0a5ed9cb686876f6eac0099a",
+      "bytes": 1203
+    },
+    {
+      "path": "graph-v2/camera-route-planner.mjs",
+      "sha": "6dda580a221b16076b531f7dadd8b333f9cf3c1b",
+      "bytes": 5396
+    },
+    {
+      "path": "graph-v2/camera-tail-phase-runner.mjs",
+      "sha": "bb37eadc26c9e5355315660fb0ad9371953219f2",
+      "bytes": 631
+    },
+    {
+      "path": "graph-v2/camera-tail-projection-runner.mjs",
+      "sha": "9bd8caa4d8dce2b005ad5f4259b49468c29973de",
+      "bytes": 8644
+    },
+    {
+      "path": "graph-v2/camera-world-prefix-runner.mjs",
+      "sha": "e312bd6aad259fee34925ce60cc35615378779dd",
+      "bytes": 5628
+    },
+    {
+      "path": "graph-v2/common-additional-ailment.mjs",
+      "sha": "8ac398bf34a8d46d64b71e8a9abf8cebb9395914",
+      "bytes": 1448
+    },
+    {
+      "path": "graph-v2/common-additional-rank.mjs",
+      "sha": "665f52f863af18bb56e26b4f767dfc696e078f8c",
+      "bytes": 1455
+    },
+    {
+      "path": "graph-v2/common-battle-schema.mjs",
+      "sha": "c72969769e1d0d5b455696cb2a3e43ca6d044f04",
+      "bytes": 3944
+    },
+    {
+      "path": "graph-v2/common-command-repetition.mjs",
+      "sha": "0fe3ffa54741e16908988835f5cd2cb28a30a353",
+      "bytes": 2026
+    },
+    {
+      "path": "graph-v2/common-command-selector-rules.mjs",
+      "sha": "d8ae153811365cc6e757e672f76aa9f4f9d88713",
+      "bytes": 3445
+    },
+    {
+      "path": "graph-v2/common-critical-rules.mjs",
+      "sha": "3860c1027bed945bfb41b2fd525b6c687ea8a3c4",
+      "bytes": 839
+    },
+    {
+      "path": "graph-v2/common-effect-resistance.mjs",
+      "sha": "f9fe427d2099be252b7164e34936e46c77397236",
+      "bytes": 3686
+    },
+    {
+      "path": "graph-v2/common-enemy-mp-drain.mjs",
+      "sha": "10dd734ef7bcaccaa735d03827b9ffec99c2f09a",
+      "bytes": 1126
+    },
+    {
+      "path": "graph-v2/common-fixed32-bytes.mjs",
+      "sha": "33d9fbd8de3b40cfc241499e7f88f179cde32f31",
+      "bytes": 3590
+    },
+    {
+      "path": "graph-v2/common-metal-damage.mjs",
+      "sha": "6f9893018ae62598d31a7cfeeb8a649d15d97e58",
+      "bytes": 2487
+    },
+    {
+      "path": "graph-v2/common-modifier-create.mjs",
+      "sha": "a3d0f03b5f9cfcb50ad05bbd81f69b7c03655e47",
+      "bytes": 5900
+    },
+    {
+      "path": "graph-v2/common-modifier-rules.mjs",
+      "sha": "13b4769197261db7214f6c5c645b9877931b19ff",
+      "bytes": 2657
+    },
+    {
+      "path": "graph-v2/common-modifier-target-callbacks.mjs",
+      "sha": "40bfe991411b434cba522d53d18e6c7e9c0f39fa",
+      "bytes": 4889
+    },
+    {
+      "path": "graph-v2/common-ordinary-authority.mjs",
+      "sha": "b3185188267e009572709eb00a344b5a3dbc39ca",
+      "bytes": 2086
+    },
+    {
+      "path": "graph-v2/common-poison-state.mjs",
+      "sha": "69ef8e149fd96c1b10c4676140a07f0aa48334eb",
+      "bytes": 1763
+    },
+    {
+      "path": "graph-v2/common-poison-target-callbacks.mjs",
+      "sha": "d54041829edaf3c8d4079933780ba49af40157f1",
+      "bytes": 8206
+    },
+    {
+      "path": "graph-v2/common-population-target-callback.mjs",
+      "sha": "21a284ebce4a2be90cbf8e2b283cf05632d4e25d",
+      "bytes": 2982
+    },
+    {
+      "path": "graph-v2/common-presentation-finish-authority.mjs",
+      "sha": "aa4a8272651ae6fa218648098a3a1c05d7f4f197",
+      "bytes": 4252
+    },
+    {
+      "path": "graph-v2/common-scenario-rules.mjs",
+      "sha": "3c95e15bb54c6ec75d57dbd7d4b3f9f4d95f2c9e",
+      "bytes": 906
+    },
+    {
+      "path": "graph-v2/common-script-parameters.mjs",
+      "sha": "2a5a395447d8f6fa82a5acc137ccfdcaf16c5e66",
+      "bytes": 1517
+    },
+    {
+      "path": "graph-v2/common-silence-target-callbacks.mjs",
+      "sha": "63802c7fb602bd75f746df5fb6488c5a82bdfdc1",
+      "bytes": 4734
+    },
+    {
+      "path": "graph-v2/common-stance-rules.mjs",
+      "sha": "911e7ede18976064641813b37466e0206e206edd",
+      "bytes": 3473
+    },
+    {
+      "path": "graph-v2/common-stance-target-callbacks.mjs",
+      "sha": "69ddc723cd208fa0bb9315fc3810e7bededbec30",
+      "bytes": 1758
+    },
+    {
+      "path": "graph-v2/common-state-selector-rules.mjs",
+      "sha": "2a32c607ee09c2c675bca8b66ad6c5a31afc7198",
+      "bytes": 3278
+    },
+    {
+      "path": "graph-v2/common-summon-rules.mjs",
+      "sha": "06d60499603ebd7306fa184dadbc49cb4c87fc10",
+      "bytes": 835
+    },
+    {
+      "path": "graph-v2/common-target-callbacks.mjs",
+      "sha": "bc0f3af364dc9cee0133f3ae1273c8705a2ab56f",
+      "bytes": 25300
+    },
+    {
+      "path": "graph-v2/common-tension-reduction.mjs",
+      "sha": "4e650d6d47e3ea89aa3b10aaf31e9e7201f771c3",
+      "bytes": 3902
+    },
+    {
+      "path": "graph-v2/common-weapon-postprocess.mjs",
+      "sha": "5215ea260870777abe20924256b342da806d61f9",
+      "bytes": 1603
+    },
+    {
+      "path": "graph-v2/common-weapon-species.mjs",
+      "sha": "2a7ed4d7696ea9c7719acc9235a892f08bc56afa",
+      "bytes": 1983
+    },
+    {
+      "path": "graph-v2/encounter-expansion/audit-model-artifacts.mjs",
+      "sha": "0cce52347c5fdf7d0468c0d991a00a4fed912b44",
+      "bytes": 1569
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-ai-definition.mjs",
+      "sha": "3399b72891e53277199e11990c20e016a484708e",
+      "bytes": 10594
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-column-action.mjs",
+      "sha": "0f3d82712f7eea0da8921bb6e0df98961f1eebd9",
+      "bytes": 4275
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-common-ai.mjs",
+      "sha": "f74cbb768b8d4f8c377646fb2db4a55eb25d1662",
+      "bytes": 15891
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-default-repeat-ai.mjs",
+      "sha": "71a6ce8c2028b92408dfed4c83fcdf27a67722ed",
+      "bytes": 16115
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-dispel-action.mjs",
+      "sha": "e66545352aeee54f40beb5ca5e65bbecbdc4a9a7",
+      "bytes": 6844
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-dispel-ai.mjs",
+      "sha": "645f491fbc3bb151dce0647b83f713cbf15fd228",
+      "bytes": 8929
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-dispel-mask.mjs",
+      "sha": "0d226b07e746c4639775cda7714b0ee21a5d19f9",
+      "bytes": 3972
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-incapacity-action.mjs",
+      "sha": "d61632371c45b210080d43918e2eb511429c811b",
+      "bytes": 6291
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-jadama-ai.mjs",
+      "sha": "f116f063e8734689a926e92a0e836b021991ee30",
+      "bytes": 9559
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-level-scaled-selector.mjs",
+      "sha": "9440c498d54398c792458a108e162c048b6035ce",
+      "bytes": 3621
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-nushi-action.mjs",
+      "sha": "6c1eda749e46aabdab4f6bd85116bee16de6905f",
+      "bytes": 5164
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-nushi-ai.mjs",
+      "sha": "bbefbfbe58a152fb95834174238f4d9a201edd42",
+      "bytes": 8093
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-nushi-preparation.mjs",
+      "sha": "0c5e49a8db35fd6c759bb8bf60fadb78c983e989",
+      "bytes": 21110
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-packed-actions.mjs",
+      "sha": "e189d5174b03f6f2c01bb2626c7e37d863c032b5",
+      "bytes": 6083
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-packed-damage.mjs",
+      "sha": "3c5f88492f6183702be191deb29ce297d0af1522",
+      "bytes": 7139
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-physical-selectors.mjs",
+      "sha": "387cab89c143a3096dccbdf16440d9f9e1329f83",
+      "bytes": 10155
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-selector-columns.mjs",
+      "sha": "5d06fdddcb60ec67965aacab7b5ebf97d8b1f391",
+      "bytes": 8136
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-shared-action.mjs",
+      "sha": "41b13f0a78163c82c64a3db2b11aba841862d108",
+      "bytes": 6286
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-status9-targets.mjs",
+      "sha": "8ffa707c86ec5d301703026464b0a6361ccfa14f",
+      "bytes": 9970
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-tension-primitives.mjs",
+      "sha": "b0df1bddd3cdd557dae99e5e18250b3ed31e4879",
+      "bytes": 8622
+    },
+    {
+      "path": "graph-v2/encounter-expansion/build-transition-targets.mjs",
+      "sha": "b845c9395661addabf1bd10f5db79096bd5775db",
+      "bytes": 13746
+    },
+    {
+      "path": "graph-v2/encounter-expansion/nushi-profiles.mjs",
+      "sha": "d255d64a040120141fb63451f2bd81ab80bb9ff4",
+      "bytes": 6021
+    },
+    {
+      "path": "graph-v2/encounter-expansion/profile-records.mjs",
+      "sha": "7eab0aae8a29401200a407f7889f32f98cfab3e0",
+      "bytes": 3999
+    },
+    {
+      "path": "graph-v2/encounter-expansion/profiles.mjs",
+      "sha": "af6bbb3498d4c5317c853398bd1a982b436795b0",
+      "bytes": 3697
+    },
+    {
+      "path": "graph-v2/exact-arithmetic-analysis.mjs",
+      "sha": "52d5ed9fa5ad0739a6763b92f5fbe27ede863b0e",
+      "bytes": 19538
+    },
+    {
+      "path": "graph-v2/extended-action.mjs",
+      "sha": "7477304c13e1c88f8c3fd3a9df163db0eb30cab8",
+      "bytes": 12065
+    },
+    {
+      "path": "graph-v2/extended-rules.mjs",
+      "sha": "1d8ca554c6b70887a45e12ba250eaf08e57314ab",
+      "bytes": 3143
+    },
+    {
+      "path": "graph-v2/f64-graph-builder.mjs",
+      "sha": "d463b386f332d2ba31dd198a8846281827a5144d",
+      "bytes": 2981
+    },
+    {
+      "path": "graph-v2/graph-builder.mjs",
+      "sha": "5f397392c693034203a751df3c1a6b9af1d2ebc9",
+      "bytes": 13996
+    },
+    {
+      "path": "graph-v2/input-domains.mjs",
+      "sha": "487ce5888e34cd7d0bab2e50eb4f47ca6f22a08f",
+      "bytes": 4810
+    },
+    {
+      "path": "graph-v2/lifecycle-rules.mjs",
+      "sha": "892f902fc8be4622eddb47d9f95db74fd6333a5c",
+      "bytes": 2568
+    },
+    {
+      "path": "graph-v2/reference.mjs",
+      "sha": "c0dfa5a0e55ce7326d45de6b25de1e3a39627393",
+      "bytes": 2074
+    },
+    {
+      "path": "graph-v2/rom-state-projection.mjs",
+      "sha": "4c426968ddb047545c0af504fa9d0f4f76ce5d1f",
+      "bytes": 3078
+    },
+    {
+      "path": "graph-v2/rules.mjs",
+      "sha": "46321468d8479c1a40d1d4b66df7630e8de7c9c9",
+      "bytes": 2114
+    },
+    {
+      "path": "graph-v2/transition-graphs.mjs",
+      "sha": "9167ad6a27ce1b74a16e8cca2ca62d2f7ee7420e",
+      "bytes": 18158
+    },
+    {
+      "path": "graph-v2/verify-common-action-arithmetic.mjs",
+      "sha": "cfacfaa69a1852b3a5d9342b98a48705a59c7d5a",
+      "bytes": 6058
+    },
+    {
+      "path": "graph-v2/verify-common-action-arm.mjs",
+      "sha": "a67d06d8d27d77b47182da549585a2c2dfbf97be",
+      "bytes": 14350
+    },
+    {
+      "path": "graph-v2/verify-common-action-fixtures.mjs",
+      "sha": "d504c122bcfef714bd5b41fef4a12a18a9e6d832",
+      "bytes": 14689
+    },
+    {
+      "path": "graph-v2/verify-common-action.mjs",
+      "sha": "325077154a91052ad2c664b332b82c8b2019462b",
+      "bytes": 11769
+    },
+    {
+      "path": "poc-v2/graph-runtime.mjs",
+      "sha": "47d45a0616abd891d4b58aad6f678e1a3ffb7704",
+      "bytes": 44432
+    },
+    {
+      "path": "poc-v2/native-graph-wasm-prototype.mjs",
+      "sha": "0cd6fe2e61f71a67315a835b6809c4a909937349",
+      "bytes": 13954
+    },
+    {
+      "path": "poc-v2/native-onnx-boundary.mjs",
+      "sha": "954b92a7f7491469f4bb43cfb386a300d4026fc8",
+      "bytes": 3335
+    },
+    {
+      "path": "poc-v2/native-resident-compiler-prototype.mjs",
+      "sha": "212625d1effa9c07c5a468d9353585b18c002a0f",
+      "bytes": 11927
+    },
+    {
+      "path": "poc-v2/native-resident-guards.mjs",
+      "sha": "de7c2005e89c14bfd096a43c7615a95db3066ee3",
+      "bytes": 4691
+    },
+    {
+      "path": "poc-v2/onnx-pure-value-metadata.mjs",
+      "sha": "517e4b6fad30a1a0e64c7e3dd50ca2002b0a675d",
+      "bytes": 6068
+    },
+    {
+      "path": "requirements-build.txt",
+      "sha": "ac33af7041028695e3d46175953c5da856b1edfd",
+      "bytes": 36
+    },
+    {
+      "path": "research/onnx-protobuf.mjs",
+      "sha": "d7552228deb3dcfbf27f11b0377f49e93655935d",
+      "bytes": 1604
+    },
+    {
+      "path": "restored/dq9-unified/data/camera-geometry.mjs",
+      "sha": "35bbc9b1ac62c6a857079da8e72465c1e792a155",
+      "bytes": 23982
+    },
+    {
+      "path": "restored/dq9-unified/data/camera-stack.mjs",
+      "sha": "d767480193c6b41f952437220a0d2b07f2b9f6be",
+      "bytes": 22111
+    },
+    {
+      "path": "restored/dq9-unified/data/encounters.mjs",
+      "sha": "5491d4087d1670a9d3ae57be1dd4b422d70429ea",
+      "bytes": 345083
+    },
+    {
+      "path": "restored/dq9-unified/data/hit-tables.mjs",
+      "sha": "7b124a3ec5ac78f4d14b5c884aea38186c4a7e5b",
+      "bytes": 284
+    },
+    {
+      "path": "restored/dq9-unified/data/rom.mjs",
+      "sha": "775f298432ad2fc52c736940b205d0fb2c2b5e69",
+      "bytes": 738482
+    },
+    {
+      "path": "restored/dq9-unified/data/runtime-tables.mjs",
+      "sha": "0b121e09027a10c00d89217b15ee135dd07c9f57",
+      "bytes": 40094
+    },
+    {
+      "path": "restored/dq9-unified/data/status-progress.mjs",
+      "sha": "080489a227d53e8b675679e35c88b1e344032ab2",
+      "bytes": 27712
+    },
+    {
+      "path": "runtime/common-animation-actor-resource.mjs",
+      "sha": "a0f2e4f07836c8465b4c4843e578fb6fffcb9ed7",
+      "bytes": 7968
+    },
+    {
+      "path": "runtime/common-animation-data.mjs",
+      "sha": "33b2e96bbd288e45dedad4e43b1f81b7467abb15",
+      "bytes": 2751
+    },
+    {
+      "path": "runtime/common-animation-program.mjs",
+      "sha": "82e8c25ce1cba5b4198944df267dab2eda95cc18",
+      "bytes": 4210
+    },
+    {
+      "path": "runtime/common-animation3d-data.mjs",
+      "sha": "7da9f8a38ce739486fa6c90ca9c4a8822e956ba1",
+      "bytes": 4585
+    },
+    {
+      "path": "runtime/common-animation3d-timer.mjs",
+      "sha": "a842b7a9c2476d040308d3f9867d8e4aa1031857",
+      "bytes": 3467
+    },
+    {
+      "path": "runtime/common-battle-search.mjs",
+      "sha": "a4510264087f0306417606e26a647cfdb67ff3a7",
+      "bytes": 17385
+    },
+    {
+      "path": "runtime/common-battle.mjs",
+      "sha": "ae5f4e103fbac62f48125343802391fbfdd3582c",
+      "bytes": 73671
+    },
+    {
+      "path": "runtime/common-bcfg.mjs",
+      "sha": "81bffc3a6bd236db721fda52786f21a1423f4a94",
+      "bytes": 3212
+    },
+    {
+      "path": "runtime/common-camera-admission.mjs",
+      "sha": "d1e8bfeeb2b0d9ed5c28e1616ff40b8be79fb8a6",
+      "bytes": 6829
+    },
+    {
+      "path": "runtime/common-camera-frame.mjs",
+      "sha": "e0f6721f817330ebda73a958f8e9c005282073bb",
+      "bytes": 5736
+    },
+    {
+      "path": "runtime/common-cchr-install.mjs",
+      "sha": "d16afb9fe9fd9012bbf08b2c985fde524de6b7da",
+      "bytes": 12100
+    },
+    {
+      "path": "runtime/common-chr-data.mjs",
+      "sha": "e833aa2517ce8ea352e3e2189e214632cd66eeaf",
+      "bytes": 6369
+    },
+    {
+      "path": "runtime/common-functional-presentation.mjs",
+      "sha": "3190a484d78d8740c79a8e667c1addd24996d328",
+      "bytes": 10459
+    },
+    {
+      "path": "runtime/common-message-controller.mjs",
+      "sha": "6af2cf5d333c09beb7dda95078b27b9c34ab01e0",
+      "bytes": 10549
+    },
+    {
+      "path": "runtime/common-message-data.mjs",
+      "sha": "5cd4127e7dc4d6c3a046b27d442d7b5495e94df4",
+      "bytes": 5473
+    },
+    {
+      "path": "runtime/common-message-window.mjs",
+      "sha": "93e483ff1964fda6f31b854565045280c5d6c7a1",
+      "bytes": 4923
+    },
+    {
+      "path": "runtime/common-model-file.mjs",
+      "sha": "cd52205d0bddf04ff3f542edf391c73fbd3a9db4",
+      "bytes": 7792
+    },
+    {
+      "path": "runtime/common-nsbxx-initialize.mjs",
+      "sha": "68296d8ef0a61df9b4576e9fedbd16f3d45b96c2",
+      "bytes": 5462
+    },
+    {
+      "path": "runtime/common-nsbxx-name-lookup.mjs",
+      "sha": "f13f740f2858a1bb1f867c42282682cfb710d64f",
+      "bytes": 3877
+    },
+    {
+      "path": "runtime/common-object-animation.mjs",
+      "sha": "53d272e49e1b12c91c71e7b631913aa72660fef5",
+      "bytes": 5499
+    },
+    {
+      "path": "runtime/common-ordinary-presentation.mjs",
+      "sha": "ec0be0e072682caaaebb19b6543161af9895dc24",
+      "bytes": 4526
+    },
+    {
+      "path": "runtime/common-presentation-entry.mjs",
+      "sha": "0bcdb9f0c4a50cdb211489ec2869b1c6e253802f",
+      "bytes": 20015
+    },
+    {
+      "path": "runtime/common-presentation-frame.mjs",
+      "sha": "8e39b8d34376a908af6c71287bf9a48e1dd57004",
+      "bytes": 35941
+    },
+    {
+      "path": "runtime/common-presentation.mjs",
+      "sha": "5f253c074c8aa8496a7556ae91bb6e73c3b11c03",
+      "bytes": 19253
+    },
+    {
+      "path": "runtime/common-program-admission.mjs",
+      "sha": "513786e48b3a969b3e364a4838a27255024a135c",
+      "bytes": 4791
+    },
+    {
+      "path": "runtime/common-resource-loader.mjs",
+      "sha": "0f3c2efb7ab77c367e7ccb7e81e11909b9ac3249",
+      "bytes": 10326
+    },
+    {
+      "path": "runtime/common-rom-assets.mjs",
+      "sha": "6d6d406ba7c35141d7a2ed92f3e0882aad92828c",
+      "bytes": 12042
+    },
+    {
+      "path": "runtime/common-safe-allocator.mjs",
+      "sha": "4ac98edecde30ffab1d16411faf3f8978e9e1117",
+      "bytes": 2253
+    },
+    {
+      "path": "scripts/benchmark-common-battle-search.mjs",
+      "sha": "b5aad43c2cc48af06aabf80b685fedc5bf45b32e",
+      "bytes": 8812
+    },
+    {
+      "path": "scripts/build-graphs.mjs",
+      "sha": "ffb01963d767e3f6e2219fb085530655f8aff5e9",
+      "bytes": 3857
+    },
+    {
+      "path": "scripts/build-html.mjs",
+      "sha": "93ef458fe962ebc0aedf5d06d0ede26116485890",
+      "bytes": 8046
+    },
+    {
+      "path": "scripts/build-release.mjs",
+      "sha": "2c54b09d228947d8055286d23fd67389c54f79a2",
+      "bytes": 8808
+    },
+    {
+      "path": "scripts/publish_hf.py",
+      "sha": "133adb1efa6aa17e0c4396e9c09eb0bb5d18ad60",
+      "bytes": 4609
+    },
+    {
+      "path": "scripts/validate_release.py",
+      "sha": "9046e80ef74553ee286ca5976d581c9f7caef569",
+      "bytes": 10816
+    },
+    {
+      "path": "scripts/verify-camera-corridor-math.mjs",
+      "sha": "b2674d866d9db969d4f880dcc88bfe878fc37d65",
+      "bytes": 3508
+    },
+    {
+      "path": "scripts/verify-common-actor-allocation-rom.mjs",
+      "sha": "361cced0f89a0e9a61d7a3dece0b8bf73d2f1dc5",
+      "bytes": 6530
+    },
+    {
+      "path": "scripts/verify-common-actor-resource-rom.mjs",
+      "sha": "ac0c960a8ef1bc2e8316249bba473ac4514333a2",
+      "bytes": 12079
+    },
+    {
+      "path": "scripts/verify-common-actor-script-update-rom.mjs",
+      "sha": "9e2ab7a12275a1e81d6aaa154403da1b9e23d33d",
+      "bytes": 6654
+    },
+    {
+      "path": "scripts/verify-common-animation3d-timer-rom.mjs",
+      "sha": "1c3c9252d8d976936527cc05b45dc2150a540c24",
+      "bytes": 5752
+    },
+    {
+      "path": "scripts/verify-common-battle-camera-rom.mjs",
+      "sha": "15a517805c3b4fd4fe69992574cee9f7fa773934",
+      "bytes": 13366
+    },
+    {
+      "path": "scripts/verify-common-battle-rom.mjs",
+      "sha": "9db5223af54aabd19ff08ef86c3f1108b2ed667d",
+      "bytes": 13367
+    },
+    {
+      "path": "scripts/verify-common-battle-search-camera-rom.mjs",
+      "sha": "5c6b5dd81b96a7ca4b2d166ddaf1ce5f97cf1bbf",
+      "bytes": 9395
+    },
+    {
+      "path": "scripts/verify-common-battle-search-joint-rom.mjs",
+      "sha": "f6de2fc98bb52e9dc0d98eea1c63bfa14d61fdf8",
+      "bytes": 14144
+    },
+    {
+      "path": "scripts/verify-common-battle-search.mjs",
+      "sha": "607fc9c75450c01d5765f32d4c2677ad68182dec",
+      "bytes": 13090
+    },
+    {
+      "path": "scripts/verify-common-battle.mjs",
+      "sha": "a2a1fd3ed95099222e65e5dfc395ac725e6a5664",
+      "bytes": 13833
+    },
+    {
+      "path": "scripts/verify-common-camera-capacity.mjs",
+      "sha": "79d13b87e9af23f6c1978951c03a01a83f0aa900",
+      "bytes": 6590
+    },
+    {
+      "path": "scripts/verify-common-camera-frame.mjs",
+      "sha": "865b9395ebbb1f6642972ea5e80d578649eeb57c",
+      "bytes": 7861
+    },
+    {
+      "path": "scripts/verify-common-camera-population-rom.mjs",
+      "sha": "df1c29a55c5d0bfba92bf57c5d8239d577a1e473",
+      "bytes": 5126
+    },
+    {
+      "path": "scripts/verify-common-camera-sequence-rom.mjs",
+      "sha": "ce8d8fa4b22e346f4e0c7d794dcf7edb63c04bb5",
+      "bytes": 11557
+    },
+    {
+      "path": "scripts/verify-common-camera-turn-rom.mjs",
+      "sha": "ce81728ac09b9d5b6fcba8753c87a24746644bdc",
+      "bytes": 4221
+    },
+    {
+      "path": "scripts/verify-common-cchr-actor-rom.mjs",
+      "sha": "09b27bb605745791e4a503b8d3f1248f941e53a6",
+      "bytes": 12135
+    },
+    {
+      "path": "scripts/verify-common-command-rom.mjs",
+      "sha": "82e465465a44aa39fd66dc415796f8ef9e405069",
+      "bytes": 10183
+    },
+    {
+      "path": "scripts/verify-common-command-selector-rom.mjs",
+      "sha": "f73070ea7a64ab379699e1eadba1b1b1b5a34941",
+      "bytes": 3927
+    },
+    {
+      "path": "scripts/verify-common-cover-rom.mjs",
+      "sha": "80c606c559d9e003e687d0fe6d16f132ecb92723",
+      "bytes": 6618
+    },
+    {
+      "path": "scripts/verify-common-effect-resistance-rom.mjs",
+      "sha": "816c253e5acfc97933a0a9e70abbf04af0fc5364",
+      "bytes": 4055
+    },
+    {
+      "path": "scripts/verify-common-functional-continuation.mjs",
+      "sha": "8fca4b214698de009f3034b03d0c0aafbd2147c3",
+      "bytes": 15776
+    },
+    {
+      "path": "scripts/verify-common-functional-presentation.mjs",
+      "sha": "9e402ca0ee9534d8964df1ab8dc4ea3693e6f160",
+      "bytes": 10449
+    },
+    {
+      "path": "scripts/verify-common-hmrf-allocator-rom.mjs",
+      "sha": "895fc91b8f874a10f7d66e07821688f87d638198",
+      "bytes": 3569
+    },
+    {
+      "path": "scripts/verify-common-message-controller.mjs",
+      "sha": "621028376d8bdcade8a38fa1d1e21fbbed7f1a7c",
+      "bytes": 3876
+    },
+    {
+      "path": "scripts/verify-common-message-window.mjs",
+      "sha": "0527a5ed7b0085f7db75dfc5a455756d1112871d",
+      "bytes": 4923
+    },
+    {
+      "path": "scripts/verify-common-metal-rom.mjs",
+      "sha": "cc376bf0911a3c6518bd1df9dace6f0cad09d17b",
+      "bytes": 6902
+    },
+    {
+      "path": "scripts/verify-common-modifier-creation-rom.mjs",
+      "sha": "4814b2443b73061a2a5b582703d18989be6ab977",
+      "bytes": 4596
+    },
+    {
+      "path": "scripts/verify-common-modifier-rom.mjs",
+      "sha": "4185c11b8aa58097048894f300365ec12e81cd3e",
+      "bytes": 5129
+    },
+    {
+      "path": "scripts/verify-common-multi-actor-rom.mjs",
+      "sha": "07cb66acf97e27f30b790cd99b2da7bc90fcc54c",
+      "bytes": 18351
+    },
+    {
+      "path": "scripts/verify-common-natural-next-turn-rom.mjs",
+      "sha": "3dbe199316fba97d9168c8c04a17cc98154f1d5f",
+      "bytes": 10506
+    },
+    {
+      "path": "scripts/verify-common-nsbxx-initialize-rom.mjs",
+      "sha": "e2f0d25b6f538fa9ac6c1e1d2511228926642759",
+      "bytes": 5555
+    },
+    {
+      "path": "scripts/verify-common-nsbxx-name-search-rom.mjs",
+      "sha": "e6df408bfae6f64c2b273b3f410aa7a88f229b9b",
+      "bytes": 4713
+    },
+    {
+      "path": "scripts/verify-common-nsbxx-wide-initialize-rom.mjs",
+      "sha": "cbf917b9ff14548e968c19412776497f08401e4e",
+      "bytes": 5464
+    },
+    {
+      "path": "scripts/verify-common-ordinary-arena-rom.mjs",
+      "sha": "8003ff65cf6865d5689dd75e280fc2d5e0eb3cc8",
+      "bytes": 14745
+    },
+    {
+      "path": "scripts/verify-common-periodic-arena.mjs",
+      "sha": "252c62a6b759b88f622dc0d04fde3dc204e9cb35",
+      "bytes": 6050
+    },
+    {
+      "path": "scripts/verify-common-periodic-presentation.mjs",
+      "sha": "bf6f6c08b813a507561c09541025c303a9caf903",
+      "bytes": 9568
+    },
+    {
+      "path": "scripts/verify-common-population-rom.mjs",
+      "sha": "523ce5a874224f9b11800164e638eaa41bff99af",
+      "bytes": 6363
+    },
+    {
+      "path": "scripts/verify-common-presentation-finish-rom.mjs",
+      "sha": "4c26941004dcc91536954ac0bbe94ad48060585d",
+      "bytes": 4292
+    },
+    {
+      "path": "scripts/verify-common-presentation-frame.mjs",
+      "sha": "181d27f1d1b2ca9808378bd8473f9b1be63262cb",
+      "bytes": 9481
+    },
+    {
+      "path": "scripts/verify-common-presentation-gate.mjs",
+      "sha": "6c20510013aa8059850e94182f3de792dc6e85e3",
+      "bytes": 5661
+    },
+    {
+      "path": "scripts/verify-common-presentation-retained-entry.mjs",
+      "sha": "c6ed792711a3d97b42db2d20e92cf215bba64938",
+      "bytes": 21398
+    },
+    {
+      "path": "scripts/verify-common-presentation-rom.mjs",
+      "sha": "98402acfbb8110281d4744205898b29115a78be7",
+      "bytes": 11547
+    },
+    {
+      "path": "scripts/verify-common-presentation-scheduler.mjs",
+      "sha": "a3337ecf82a24206259a6119ee8e70482638dd95",
+      "bytes": 6474
+    },
+    {
+      "path": "scripts/verify-common-redirect-rom.mjs",
+      "sha": "84b65a42654679bd8f3333031f576a6bf28190c2",
+      "bytes": 6758
+    },
+    {
+      "path": "scripts/verify-common-resource-loader-external-rom.mjs",
+      "sha": "b730f9b224f36f86263aec5440c67f66b96f6d37",
+      "bytes": 5504
+    },
+    {
+      "path": "scripts/verify-common-resource-loader-rom.mjs",
+      "sha": "0dbec5512d3cd417e6c037b25fc4bb21742bada9",
+      "bytes": 4183
+    },
+    {
+      "path": "scripts/verify-common-resource-loader-runtime-rom.mjs",
+      "sha": "b75219d4d72a8e9f7c4fd33958d2e6e6d7489e1c",
+      "bytes": 7317
+    },
+    {
+      "path": "scripts/verify-common-stance-rom.mjs",
+      "sha": "e9297cc1c26f500d89e115ed27bb0fa8ae8bffb1",
+      "bytes": 4492
+    },
+    {
+      "path": "scripts/verify-common-state-selector-rom.mjs",
+      "sha": "29db93505b003c6a4c60cc3043fb2c5c368a80d8",
+      "bytes": 4761
+    },
+    {
+      "path": "scripts/verify-common-summon-command-rom.mjs",
+      "sha": "10a697d68470a8c37efb3fdd546e76d57815eec6",
+      "bytes": 10441
+    },
+    {
+      "path": "scripts/verify-common-summon-turn-rom.mjs",
+      "sha": "83ec61bfac8b4a2469877da227007f8de4a56cd7",
+      "bytes": 9405
+    },
+    {
+      "path": "scripts/verify-common-target-callbacks.mjs",
+      "sha": "125f52ea7adaf82c5b7b159a7ac4ad191e923d40",
+      "bytes": 11977
+    },
+    {
+      "path": "scripts/verify-common-tension-numeric-rom.mjs",
+      "sha": "acb11295919d24ce2c3bd7fee8a88752ff38ff1b",
+      "bytes": 4302
+    },
+    {
+      "path": "scripts/verify-html.mjs",
+      "sha": "6bff84320e52c807fbbb4cd45b5d7d9e65559bc7",
+      "bytes": 34766
+    },
+    {
+      "path": "scripts/verify-native-f32-division.mjs",
+      "sha": "cb591bf3b8bcb5de7ae53f8e979149297fbcdd47",
+      "bytes": 7550
+    },
+    {
+      "path": "scripts/verify-webgpu.mjs",
+      "sha": "bfe57690e25274f37d49513c463eb0dafb81f572",
+      "bytes": 7840
+    },
+    {
+      "path": "web/app.mjs",
+      "sha": "2b0e700735695dcc16d29f71f10fea75c3cb4322",
+      "bytes": 43246
+    },
+    {
+      "path": "web/graph-executor.mjs",
+      "sha": "58424c711eb348442dfaac12d69f05b47cf38586",
+      "bytes": 7896
+    },
+    {
+      "path": "web/input-validation.mjs",
+      "sha": "f9c0f45dffe66e8f8fb1c64ecc8ae45e040139d5",
+      "bytes": 2241
+    },
+    {
+      "path": "web/template.html",
+      "sha": "ddbee2fa41c9ee5992846e075b69359cfbac5d6f",
+      "bytes": 14228
+    }
+  ]
+}

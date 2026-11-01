@@ -14,9 +14,9 @@ export function initialCommonMessageController({resourceLoader}={}){
   return{queue:{messageIds:Array(16).fill(0),targets:Array(16).fill(0),extraSources:Array(16).fill(0),serials:Array(16).fill(0),holds:Array(16).fill(0),types:Array(16).fill(0),contextsU16:Array(32).fill(0),active:0,serialCounter:0,cursor:0},phase:0,holdTimer:0,defaultHold:750,savedSource:0,contextU16:[0,0],scriptEnabled:false,secondaryReady:false,secondaryTaskPresent:false,secondaryTaskDecoded:false,primaryAllocatorPresent:false,primaryTaskId:-1,primaryTask:null,loader:resourceLoader?initialCommonResourceLoader(resourceLoader):null,catalog:null,window:initialCommonMessageWindow()};
 }
 
-export function createCommonMessageControllerRunner({runGraph,getModel,fonts,assets,namesById={},actionNamesById={},onTrace,allocators,installationState}={}){
+export function createCommonMessageControllerRunner({runGraph,getModel,fonts,assets,namesById={},actionNamesById={},onTrace}={}){
   const window=createCommonMessageWindowRunner({runGraph,fonts,onTrace});
-  const loader=createCommonResourceLoaderRunner({runGraph,getModel,assets,onTrace,allocators,installationState});
+  const loader=createCommonResourceLoaderRunner({runGraph,getModel,assets,onTrace});
   async function call(name,input){const model=await getModel(name),values={...model.contract.defaults,...input},feeds=Object.fromEntries(model.inputs.map(d=>[d.name,Array.isArray(values[d.name])?values[d.name]:[values[d.name]]])),out=(await runGraph(name,[feeds]))[0];await onTrace?.({name,feeds:clone(feeds),result:clone(out)});return out;}
   async function queue(state,operation,request={}){
     const q=state.queue,o=await call('rom-common-message-queue',{...q,operation,...request});

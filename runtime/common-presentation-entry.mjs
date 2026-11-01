@@ -30,10 +30,6 @@ function sceneProjection(state){
   if(s.actorResourceStateU16)vector(SCRIPT+0x1c8,2,s.actorResourceStateU16,(out,v)=>out.actorResourceStateU16=v);
   if(s.scriptAllocatorPointersU16)vector(SCRIPT+0x10,2,s.scriptAllocatorPointersU16,(out,v)=>out.scriptAllocatorPointersU16=v);
   if(s.scriptAllocatorIndex!==undefined)field(SCRIPT+0x30,1,s.scriptAllocatorIndex,(out,v)=>out.scriptAllocatorIndex=v);
-  const reset=s.scriptState?.scriptResetU16??s.retainedScriptResetU16;
-  if(reset)vector(SCRIPT+0x540,2,reset,(out,v)=>out.retainedScriptResetU16=v);
-  if(s.scriptTaskCount!==undefined)field(SCRIPT+0x582,1,s.scriptTaskCount,(out,v)=>out.scriptTaskCount=v);
-  if(s.scriptTaskIds)vector(SCRIPT+0x584,2,s.scriptTaskIds,(out,v)=>out.scriptTaskIds=v);
   field(SCRIPT+0x5ce,2,s.scriptDelay,(out,v)=>out.scriptDelay=v);
   field(0x5e2a,1,s.markerCount,(out,v)=>out.markerCount=v);
   field(SCRIPT+0x839,1,m.scriptEnabled,(out,v)=>out.message.scriptEnabled=v,{boolean:true});
@@ -138,7 +134,7 @@ export async function createCommonPresentationEntryRunner({runGraph,getModel,onT
       requireData(numericState?.phase==='numeric-turn-complete'&&numericState.camera?.numericTurnPending,'The retained numerical turn must complete exactly once before its next presentation');
       requireData(cameraRow&&Array.isArray(commands)&&commands.length===cameraRow.commands.length,'New commands must come from the shared computed presentation arena');
       const before=clone(state),row=before.row,objects=new Map([...row.roster,...row.lookupObjects??[]].map(a=>[a.id,a])),numeric=new Map(numericState.actors.map(a=>[a.actorId,a]));
-      for(const object of row.roster){requireData(numeric.has(object.id),'A retained visual object is missing from the current numeric roster');const actor=numeric.get(object.id);object.dead=!!actor.dead;object.stats18Low16=actor.rawFlags%65536;object.numericStatsPresent=true;}
+      for(const object of row.roster){requireData(numeric.has(object.id),'A retained visual object is missing from the current numeric roster');object.dead=!!numeric.get(object.id).dead;}
       const activeNumeric=numericState.actors.filter(a=>!a.excluded&&!a.dead);requireData(activeNumeric.every(a=>row.roster.some(o=>o.id===a.actorId)),'A new numerical actor needs its original visual-object producer');
       const declaredTactics=partyTacticsById??before.input.partyTacticsById,tactics=IDS.slice(0,4).map(id=>{if(!objects.has(id)||objects.get(id).lookupPresent===false)return null;requireData(Object.hasOwn(declaredTactics??{},String(id)),'Explicit party tactics pointer/value required for actor '+id);const value=declaredTactics[id];requireData(value===null||Number.isInteger(value)&&value>=-128&&value<=127,'Original signed party tactics byte is required');return value;});
       const base=before.input.stackAbi.sceneBaseU16,globalBase=before.input.stackAbi.globalSceneBaseU16,context=before.input.stackAbi.contextU16??row.cameraRngPointerU16;

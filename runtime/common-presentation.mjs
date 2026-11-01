@@ -15,18 +15,18 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
   if(cpuDoubleProvider!=='onnxruntime-wasm')throw Error('Camera reverse polar requires explicitly selected ONNX Runtime WASM DOUBLE execution');
   const ordinaryArena=createCommonOrdinaryArenaRunner({definitions});
   return async function present({state,records,runGraph,getModel}){
-    const camera=clone(state.camera),initial=camera.initial,rawActions=Object.values(definitions.actions).map(x=>x.raw),outputs=[],externalRow4=camera.mode==='battle-camera';
+    const camera=clone(state.camera),initial=camera.initial,rawActions=Object.values(definitions.actions).map(x=>x.raw),outputs=[];
     let periodicComplete=false;
     const failed=(reason,details={})=>({complete:false,periodicComplete,seed:[...state.seed],position:state.position,camera:{...camera,complete:false,wholeCameraComplete:false,nextNumericTurnReady:false,unresolvedEffects:[{reason,...details}]},unresolvedEffects:[{reason,...details}]});
-    if(!['camera-projection','functional-frame','battle-camera'].includes(camera.mode))return failed('presentation-mode',{message:'Select an explicit numerical/camera execution scope.'});
+    if(!['camera-projection','functional-frame'].includes(camera.mode))return failed('presentation-mode',{message:'Select numeric-only, camera-projection or functional-frame explicitly.'});
     if(!initial||typeof initial!=='object')return failed('camera-initial-state',{required:'camera.initial contains visual roster, program/resource state and initial camera fields; camera.row4Words is the correlated external four-word observation.'});
     if(Object.hasOwn(initial,'commands'))return failed('observed-command-input',{message:'Presentation commands are generated from this numerical run, never accepted as initial observations.'});
-    if((initial.queuedPresentationRecords??[]).length||(!externalRow4&&state.presentationExtraEvents))return failed('auxiliary-presentation-producer',{message:'An auxiliary/periodic event needs its common record producer and real event schedule.'});
+    if((initial.queuedPresentationRecords??[]).length||state.presentationExtraEvents)return failed('auxiliary-presentation-producer',{message:'An auxiliary/periodic event needs its common record producer and real event schedule.'});
     const row4=camera.row4Words;
-    if(!externalRow4&&(!Array.isArray(row4)||row4.length!==4||row4.some(x=>!Number.isInteger(x)||x<0||x>4294967295)))return failed('correlated-row4-input',{required:'Four exact uint32 words in camera.row4Words.'});
+    if(!Array.isArray(row4)||row4.length!==4||row4.some(x=>!Number.isInteger(x)||x<0||x>4294967295))return failed('correlated-row4-input',{required:'Four exact uint32 words in camera.row4Words.'});
     const abi=initial.stackAbi;
-    if(!externalRow4&&(!abi||abi.sameStack!==true||!abi.objectAddressU16||!Array.isArray(abi.gameStateSingletonU16)))return failed('camera-stack-abi',{required:'The legacy same-stack diagnostic requires its declared pointer identities.'});
-    if(!Array.isArray(initial.roster)||initial.roster.length<1||initial.roster.length>12)return failed('camera-roster-capacity',{capacity:12,message:'The common camera planner represents the original four party and eight enemy object slots.'});
+    if(!abi||abi.sameStack!==true||!abi.objectAddressU16||!Array.isArray(abi.gameStateSingletonU16))return failed('camera-stack-abi',{required:'Initial stackAbi.sameStack=true, objectAddressU16 by actual object ID, and gameStateSingletonU16. These are pointer identities, not intermediate observed results.'});
+    if(!Array.isArray(initial.roster)||initial.roster.length<1||initial.roster.length>4)return failed('camera-roster-capacity',{capacity:4,message:'Current shared planner tensor supports four visual objects. Numerical population supports the full ROM roster; a larger visual roster is rejected explicitly.'});
     if(records.length>72)return failed('camera-command-capacity',{count:records.length,capacity:72,authority:'Original command arena: 72 records of 40 bytes, counter battle+0x8e24.'});
     const call=async(name,input)=>{
       const ir=await getModel(name),feed={};for(const field of ir.inputs){const v=input[field.name]??ir.contract?.defaults?.[field.name];if(v===undefined)throw Error(name+'.'+field.name+': missing computed presentation operand');feed[field.name]=one(v);}
@@ -36,9 +36,9 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
     // A stricter arena boundary is reported separately, never replaced with
     // guessed event bytes or treated as a complete frame/message producer.
     const arenaBase=initial.presentationArenaBaseU16??initial.cameraRngPointerU16??[0,0],messagePadding=initial.presentationMessagePaddingBytes??Array(504).fill(0),
-      arena={schema:'dq9-computed-presentation-arena-v1',complete:!externalRow4,baseU16:clone(arenaBase),counterFields:['commands','participants','targets','impacts','messages'],counters:[0,0,0,0,0],records:[],unresolvedEffects:[],
+      arena={schema:'dq9-computed-presentation-arena-v1',complete:true,baseU16:clone(arenaBase),counterFields:['commands','participants','targets','impacts','messages'],counters:[0,0,0,0,0],records:[],unresolvedEffects:[],
         provenance:'Shared numerical outputs -> shared ordinary/periodic semantic graphs -> exact record allocations and bytes. No observed queue is accepted.',messagePaddingOrigin:initial.presentationMessagePaddingBytes?'explicit-initial-bytes':'zero-initialized-reserved-padding'};
-    if(!externalRow4)camera.arena=arena;
+    camera.arena=arena;
     const arenaFailure=(reason,details={})=>{arena.complete=false;arena.unresolvedEffects.push({reason,...details});};
     if(!Array.isArray(arenaBase)||arenaBase.length!==2||arenaBase.some(x=>!Number.isInteger(x)||x<0||x>65535))arenaFailure('presentation-arena-base');
     if(!Array.isArray(messagePadding)||messagePadding.length!==504||messagePadding.some(x=>!Number.isInteger(x)||x<0||x>255))arenaFailure('presentation-message-padding');
@@ -48,26 +48,19 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
     for(const [index,record]of records.entries()){
       if(!record.presentationBefore||!record.presentationAfter)return failed('numerical-presentation-operands',{index});
       if(record.impacts.length!==record.targets.length||record.impacts.length===0)return failed('presentation-target-records',{index,actionId:record.actionId});
-      let command=null,reactionCommand=null,recoveryCommand=null;
+      let command=null;
       for(const [targetIndex,impact]of record.impacts.entries()){
         const input={actionId:record.actionId,operation:definitions.actions[record.actionId]?.operation??-1,sourceId:record.sourceId,targetId:impact.targetId,participantCount:record.participants.length,targetCount:record.impacts.length,damage:impact.damage,comboCount:impact.comboCount??record.comboCount??0,comboEnabled:!!definitions.actions[record.actionId]?.combo,critical:!!impact.critical,dodged:!!impact.dodged,guarded:!!impact.guarded,operationHit:!!impact.operationHit,effectApplied:!!impact.effectApplied,auxiliaryEvent:!!record.auxiliaryEvent,terminal:state.outcome!==0,partyWeaponMessage:!!initial.partyWeaponMessage,enabled:true};
         for(const [when,snap]of [['before',impact.presentationBefore??record.presentationBefore],['after',impact.presentationAfter??record.presentationAfter]])for(const who of ['Source','Target'])for(const type of ['Actor','Aux','Status','WakeSkip','Tension'])input[when+who+type]=snap[who.toLowerCase()]?.[type[0].toLowerCase()+type.slice(1)];
-        const output=await call(externalRow4?'rom-common-camera-command':'rom-common-presentation-command',externalRow4?{
-          ...input,effectiveActionId:impact.effectiveActionId??record.actionId,effectiveSourceId:impact.sourceId??record.sourceId,
-          critical:!!(impact.originalCritical??impact.critical),cameraFlagsB:impact.cameraFlagsB??8,metadataPresent:Number.isInteger(impact.cameraFlagsB),reactionEvent:record.cameraReactionSources?.includes(record.sourceId)??false,recoveryEvent:record.cameraRecoverySources?.includes(record.sourceId)??false
-        }:input);
+        const output=await call('rom-common-presentation-command',input);
         if(!output.supported[0]||!output.wrote[0])return failed('presentation-command-producer',{index,targetIndex,actionId:record.actionId,sourceId:record.sourceId,message:'The computed impact is outside the shared semantic record producer.'});
         const [actionId,messageId,sourceId,targetId,flagsA,flagsB]=output.command;
         if(command===null)command={actionId,messageId,participants:[sourceId],targets:[],flagsA:0,flagsB:8};
         command.targets.push(targetId);command.flagsA|=flagsA;
         if(!(flagsB&8))command.flagsB&=~8;
         if(flagsB&224)command.flagsB=(command.flagsB&31)|(flagsB&224);
-        if(externalRow4&&output.reactionWrote?.[0]){const [actionId,messageId,sourceId,targetId,flagsA,flagsB]=output.reactionCommand;reactionCommand={actionId,messageId,participants:[sourceId],targets:[targetId],flagsA,flagsB};}
-        if(externalRow4&&output.recoveryWrote?.[0]){const [actionId,messageId,sourceId,targetId,flagsA,flagsB]=output.recoveryCommand;recoveryCommand={actionId,messageId,participants:[sourceId],targets:[targetId],flagsA,flagsB};}
       }
       commands.push(command);
-      if(reactionCommand)commands.push(reactionCommand);
-      if(recoveryCommand)commands.push(recoveryCommand);
       if(arena.complete){
         const produced=await ordinaryArena({record,arenaBaseU16:arena.baseU16,counters:arena.counters,messagePaddingBytes:messagePadding,terminal:state.outcome!==0,partyWeaponMessage:!!initial.partyWeaponMessage,battleMode:initial.battleMode??0,runGraph,getModel});
         if(produced.complete)appendArena('ordinary',produced.arena);else arenaFailure(produced.reason,{index,actionId:record.actionId,details:produced});
@@ -115,12 +108,11 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
     }
     periodicComplete=true;
     if(commands.length>72)return failed('camera-command-capacity',{count:commands.length,capacity:72});
-    if(externalRow4)return{complete:true,periodicComplete,seed:[...state.seed],position:state.position,camera:{...camera,preparedCommands:clone(commands),preparedRawActions:rawActions,nextNumericTurnReady:false,scope:'Computed battle command metadata only. row+4 is requested at each camera call boundary; no stack, font, loader or rendering computation supplies it.'}};
     if(commands.length===0)return failed('empty-presentation-queue');
     const initialRow=cameraEnclosingGeometryInitial({...clone(initial),commands,row4Words:[...row4],rawActions,seed:seedHex(state.seed),currentActionIndex:0});
     initialRow.seed=[...state.seed];initialRow.position=[state.position];
     const actorMap=new Map(state.actors.map(a=>[a.actorId,a]));
-    for(const a of initialRow.roster){const numeric=actorMap.get(a.id);if(!numeric)return failed('visual-numeric-object-lookup',{objectId:a.id});a.dead=!!numeric.dead;a.stats18Low16=numeric.rawFlags%65536;a.numericStatsPresent=true;}
+    for(const a of initialRow.roster){const numeric=actorMap.get(a.id);if(!numeric)return failed('visual-numeric-object-lookup',{objectId:a.id});a.dead=!!numeric.dead;}
     // The frame runner starts here, before any enclosing-camera call. The
     // completed direct projection below is a separate explicit execution.
     camera.projectionInitial=clone(initialRow);
