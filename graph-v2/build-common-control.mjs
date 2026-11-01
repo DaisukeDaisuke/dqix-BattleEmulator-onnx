@@ -206,6 +206,9 @@ export function buildCommonPostStatus(){
     }else{
       const rk=rule.field+'Recovery',dk=rule.field+'Duration',gate=g.and(active,g.not(g.eq(actor[rule.field],0)),g.gt(aux[rk],0)),remaining=g.max(g.sub(aux[rk],1),0),clear=g.and(gate,g.lt(rng.bounded(gate,100),lookup(g,remaining,rule.thresholds)));
       actor[rule.field]=g.where(clear,0,actor[rule.field]);aux[rk]=g.where(clear,0,g.where(gate,remaining,aux[rk]));aux[dk]=g.where(clear,0,aux[dk]);
+      if(rule.field==='doubleGuard'||rule.field==='doubleDodge'){
+        const index=rule.field==='doubleGuard'?8:9;raw.rawRanks[index]=g.where(clear,0,raw.rawRanks[index]);
+      }
       // The original blind clear02088874 leaves the stored subtype intact.
       // Only its flag and duration/recovery bytes are cleared here.
     }
@@ -279,18 +282,22 @@ export function buildCommonPeriodic(){
 export function buildCommonTurnStatus(){
   const g=new Graph('rom-common-turn-status',{...common,
     authority:{file:'src/Combat/Overlay_0/func_ov000_02157e1c.cpp',address:'overlay0:0x0215959c'},
-    scope:'Actor-local MP then HP regen status expiration, followed by coup lifetime. A represented regen status consumes a separate bounded100 even when its fixed duration has not expired.',
+    scope:'Actor-local blade-defense flag clear, then MP and HP regen status expiration, followed by coup lifetime. A represented regen status consumes a separate bounded100 even when its fixed duration has not expired.',
     callerBoundary:'Caller consumes one shared bounded100 before visiting the surviving participants. That shared value belongs to omitted immunity status fields and is not consumed here. The entire phase is skipped if periodic effects ended combat.',
     coup:'The duration is a four-bit field: ready with duration0 decrements to15; ready clears only when decrement reaches0.',
-    feedback:{seed:'nextSeed',position:'nextPosition',actor:'nextActor',aux:'nextAux'}});
-  const {seed,position}=seedInput(g),actor=unpack(g,'actor',ACTOR_FIELDS),aux=unpack(g,'aux',COMMON_AUX_FIELDS),{enabled,present}=enabledInput(g),active=g.and(enabled,present,g.gt(actor.hp,0)),rng=new RandomGraph(g,seed,position);
+    defaults:{...common.defaults,rawFlagBytes:[0,0,0,0]},
+    feedback:{seed:'nextSeed',position:'nextPosition',actor:'nextActor',aux:'nextAux',rawFlagBytes:'nextRawFlagBytes'}});
+  const {seed,position}=seedInput(g),actor=unpack(g,'actor',ACTOR_FIELDS),aux=unpack(g,'aux',COMMON_AUX_FIELDS),{enabled,present}=enabledInput(g),active=g.and(enabled,present,g.gt(actor.hp,0)),rng=new RandomGraph(g,seed,position),rawFlags=[...g.split(g.input('rawFlagBytes',['N',4]),4)];
+  // The enclosing original02157e1c clears this one-turn stance before its
+  // regen checks. It is independent of whether a new ailment was applied.
+  commonRawOverlay(g,rawFlags,5,g.where(active,0,commonRawBit(g,rawFlags,5)));
   for(const prefix of ['mp','hp']){
     const flag=prefix+'Regen',dk=prefix+'Duration',rk=prefix+'Recovery',gate=g.and(active,g.gt(actor[flag],0)),roll=rng.bounded(gate,100),recovering=g.gt(actor[rk],0),remaining=g.max(g.sub(actor[rk],1),0),
       clear=g.and(gate,recovering,g.lt(roll,lookup(g,remaining,[100,87.5,75,62.5]))),tick=g.and(gate,g.not(recovering),g.gt(actor[dk],0)),duration=g.max(g.sub(actor[dk],1),0);
     actor[flag]=g.where(clear,0,actor[flag]);actor[dk]=g.where(clear,0,g.where(tick,duration,actor[dk]));actor[rk]=g.where(clear,0,g.where(g.and(gate,recovering),remaining,g.where(g.and(tick,g.eq(duration,0)),4,actor[rk])));
   }
   const coup=coupTailTick(g,{ready:aux.coupReady,duration:aux.coupDuration,enabled:active});aux.coupReady=coup.ready;aux.coupDuration=coup.duration;
-  randomOutputs(g,rng,position);g.output(pack(g,ACTOR_FIELDS,actor),'nextActor');g.output(pack(g,COMMON_AUX_FIELDS,aux),'nextAux');g.output(active,'active');return g;
+  randomOutputs(g,rng,position);g.output(pack(g,ACTOR_FIELDS,actor),'nextActor');g.output(pack(g,COMMON_AUX_FIELDS,aux),'nextAux');g.output(g.cat(rawFlags),'nextRawFlagBytes');g.output(active,'active');return g;
 }
 
 export function buildCommonStateView(){
