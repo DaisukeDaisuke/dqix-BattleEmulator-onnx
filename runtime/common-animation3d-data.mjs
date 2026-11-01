@@ -1,11 +1,13 @@
 // Original Animation3D::CreateData. The host reads actual backing records and
 // raw archive structures; shared graphs compute every state-changing value.
 import {inspectOriginalNSBXX} from './common-chr-data.mjs';
+import {createCommonNsbxxNameLookupRunner,COMMON_NSBXX_NAME_LOOKUP_MODELS} from './common-nsbxx-name-lookup.mjs';
 
-export const COMMON_ANIMATION3D_DATA_MODELS=['rom-common-animation3d-data','rom-common-chr-allocation','rom-common-nsbxx-animation','rom-common-nsbxx-name-match'];
+export const COMMON_ANIMATION3D_DATA_MODELS=['rom-common-animation3d-data','rom-common-chr-allocation','rom-common-nsbxx-animation',...COMMON_NSBXX_NAME_LOOKUP_MODELS];
 const scalar=(o,k)=>Number(o[k]?.[0]),word=p=>p[0]+65536*p[1],pair=n=>[n%65536,Math.floor(n/65536)],clone=x=>structuredClone(x);
 
 export function createCommonAnimation3DDataRunner({getModel,runGraph,onTrace,read,write,allocate,boundary}={}){
+  const nameLookup=createCommonNsbxxNameLookupRunner({getModel,runGraph,onTrace});
   async function call(name,input){
     const ir=await getModel(name);if(!ir)boundary('The shared original Animation3D producer is missing: '+name);
     const values={...ir.contract.defaults,...input},feeds=Object.fromEntries(ir.inputs.map(d=>[d.name,Array.isArray(values[d.name])?values[d.name]:[values[d.name]]]));
@@ -14,10 +16,11 @@ export function createCommonAnimation3DDataRunner({getModel,runGraph,onTrace,rea
     return out;
   }
   const half=(bytes,i)=>bytes[i]+256*bytes[i+1],uint=(bytes,i)=>half(bytes,i)+65536*half(bytes,i+2);
-  function materialNames(pointer,header){
-    const relative=uint(header,8);if(!relative)return[];
-    const at=word(pointer)+relative+4,dict=read(pair(at),8,{known:true}),count=dict[1],start=at+half(dict,6),entryHeader=read(pair(start),4,{known:true}),names=read(pair(start+half(entryHeader,2)),count*16,{known:true});
-    return Array.from({length:count},(_,i)=>names.slice(16*i,16*i+16));
+  function materialDictionary(pointer,header){
+    const relative=uint(header,8);if(!relative)return{count:0,treeBytes:[0,0,0,0],names:[]};
+    const at=word(pointer)+relative+4,dict=read(pair(at),8,{known:true}),count=dict[1],dataOffset=half(dict,6),start=at+dataOffset,entryHeader=read(pair(start),4,{known:true}),names=read(pair(start+half(entryHeader,2)),count*16,{known:true});
+    if(dataOffset<12)boundary('Original NSBXX dictionary has no represented root node');
+    return{count,treeBytes:read(pair(at+8),dataOffset-8,{known:true}),names:Array.from({length:count},(_,i)=>names.slice(16*i,16*i+16))};
   }
   return{
     models:COMMON_ANIMATION3D_DATA_MODELS,
@@ -37,10 +40,10 @@ export function createCommonAnimation3DDataRunner({getModel,runGraph,onTrace,rea
       if(a.jointTrackTargetBytes)for(const[trackIndex,targetBone]of a.jointTrackTargetBytes.entries()){
         update=await call('rom-common-nsbxx-animation',{...operands,operation:1,trackIndex,targetBone,animationBytes:bytes});bytes=update.nextAnimationBytes;write(allocation.returnPointerU16,bytes.slice(0,dataLength),update.writtenMaskBytes.slice(0,dataLength));
       }
-      if(a.trackNames){const names=materialNames(r.internalModelPointerU16,modelHeader);if(names.length>15)boundary('Original long animation material dictionary needs its Patricia-tree producer');
+      if(a.trackNames){const dictionary=materialDictionary(r.internalModelPointerU16,modelHeader);
         for(const[trackIndex,targetBytes]of a.trackNames.entries()){
-          const match=await call('rom-common-nsbxx-name-match',{nameCount:names.length,namesBytes:Array.from({length:240},(_,i)=>names[Math.floor(i/16)]?.[i%16]??0),targetBytes});
-          update=await call('rom-common-nsbxx-animation',{...operands,operation:2,trackIndex,materialIndex:scalar(match,'index'),animationBytes:bytes});bytes=update.nextAnimationBytes;write(allocation.returnPointerU16,bytes.slice(0,dataLength),update.writtenMaskBytes.slice(0,dataLength));
+          const match=await nameLookup.lookup({dictionary,targetBytes});if(!match.complete)boundary(match.pending);
+          update=await call('rom-common-nsbxx-animation',{...operands,operation:2,trackIndex,materialIndex:match.index,animationBytes:bytes});bytes=update.nextAnimationBytes;write(allocation.returnPointerU16,bytes.slice(0,dataLength),update.writtenMaskBytes.slice(0,dataLength));
         }
       }
       const committed=await call('rom-common-animation3d-data',{...base,operation:2,innerAnimationPresent,allocationPointerU16:allocation.returnPointerU16,initializationCompleted:true});write(animationPointerU16,committed.nextAnimationBytes,committed.writtenMaskBytes);

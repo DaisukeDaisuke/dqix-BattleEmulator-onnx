@@ -78,7 +78,7 @@ export async function createCommonPresentationFrameRunner(options){
   function rawAction(s,id){const bytes=s.row.rawActions.map(toBytes).find(b=>(b[4]+256*b[5])%4096===id);requireData(bytes,'Missing original action '+id);return bytes;}
   function actionData(s,c){const raw=rawAction(s,c.actionId),d=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);return{raw,category:d.getUint32(24,true)>>>12&15,state6Category:d.getUint32(20,true)>>>28,definitionId:d.getUint32(4,true)&4095};}
   async function phase(s,name){await onPhase?.({name,frame:s.frameNumber,state:clone(s)});}
-  function messageRunner(s){return createCommonMessageControllerRunner({runGraph,getModel,onTrace,fonts:parseOriginalStaticFontTables(s.input.fontTables),assets:s.input.assets,namesById:s.input.namesById,actionNamesById:s.input.actionNamesById});}
+  function messageRunner(s){return createCommonMessageControllerRunner({runGraph,getModel,onTrace,fonts:parseOriginalStaticFontTables(s.input.fontTables),assets:s.input.assets,namesById:s.input.namesById,actionNamesById:s.input.actionNamesById,allocators:s.resourceAllocators,installationState:s.resourceInstallation});}
   async function admit(s,message){
     const c=command(s);requireData(c,'Admission requires the computed current command');
     if(s.input.visualRoster){const v=s.input.visualRoster,map=objects(s);s.row.visualRoster={partyOrder:[...v.partyOrder],partyCount:v.partyCount,battlePartyMask:v.battlePartyMask,context81fe:s.row.battleType,actorTypeFlagsLow16:IDS.map(id=>map.get(id)?.typeFlagsLow16??s.actors[id]?.typeFlagsLow16??0),actorFlags18Low16:IDS.map(id=>map.get(id)?.flags18Low16??s.actors[id]?.flags18Low16??0),actorModelPresent:IDS.map(id=>!!(map.get(id)?.modelPresent??s.actors[id]?.modelPresent))};}

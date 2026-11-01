@@ -1,5 +1,5 @@
 // Dependency-free, inspectable ONNX generation. No trained parameters.
-import {writeFile} from 'node:fs/promises';
+import {writeFile,rename,rm} from 'node:fs/promises';
 import {concat, integer, string, message, node as protobufNode, tensor, valueInfo, intAttribute} from '../research/onnx-protobuf.mjs';
 import {analyzeExactArithmetic} from './exact-arithmetic-analysis.mjs';
 export const TYPES={float32:1,int32:6,bool:9};
@@ -109,7 +109,17 @@ export class Graph {
     const graph=concat(nodes.map(x=>message(1,x)),string(2,this.name),constants.map(x=>message(5,x)),this.inputs.map(x=>message(11,valueInfo(x.name,x.shape,TYPES[x.dtype]))),this.outputs.map(x=>message(12,valueInfo(x.name,x.shape,TYPES[x.dtype]))));
     return concat(integer(1,8),string(2,'DQ9 exact-rule graph experiment'),string(3,'2'),string(6,JSON.stringify(this.contract)),message(7,graph),message(8,concat(string(1,''),integer(2,18))));
   }
-  async save(directory=new URL('./',import.meta.url)){const data=this.model(),ir=this.json();await writeFile(new URL(`${this.name}.onnx`,directory),data);await writeFile(new URL(`${this.name}.json`,directory),JSON.stringify(ir,null,2)+'\n');return {name:this.name,bytes:data.length,nodes:ir.nodes.length,ops:[...new Set(ir.nodes.map(x=>x.op))],inputs:this.inputs,outputs:this.outputs};}
+  async save(directory=new URL('./',import.meta.url)){
+    const data=this.model(),ir=this.json(),staged=[];
+    try{
+      for(const[extension,contents]of[['onnx',data],['json',JSON.stringify(ir)+'\n']]){
+        const final=new URL(`${this.name}.${extension}`,directory),temporary=new URL(`${this.name}.${extension}.pending-${process.pid}`,directory);
+        staged.push({final,temporary});await writeFile(temporary,contents);
+      }
+      for(const file of staged)await rename(file.temporary,file.final);
+    }finally{for(const file of staged)await rm(file.temporary,{force:true});}
+    return {name:this.name,bytes:data.length,nodes:ir.nodes.length,ops:[...new Set(ir.nodes.map(x=>x.op))],inputs:this.inputs,outputs:this.outputs};
+  }
 }
 
 export function lcg(g,seed){

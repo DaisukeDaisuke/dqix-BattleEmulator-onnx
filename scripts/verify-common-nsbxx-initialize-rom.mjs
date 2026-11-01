@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+import {readFile,writeFile} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {createGraphExecutor} from '../web/graph-executor.mjs';
+import {loadLocalOrt} from './verify-common-battle.mjs';
+import {inspectOriginalNSBXX} from '../runtime/common-chr-data.mjs';
+const args=process.argv.slice(2),option=k=>{const i=args.indexOf(k);return i<0?undefined:args[i+1];},root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),hash=b=>createHash('sha256').update(b).digest('hex'),pair=n=>[n%65536,Math.floor(n/65536)],scalar=(o,k)=>Number(o[k]?.[0]);
+const sourceBytes=await readFile(option('--source')),source=JSON.parse(sourceBytes);if(!source.executionComplete||!source.programUnmodified||source.romSHA256!=='b7a7f82f9da6f5bd08b5ae436d67cbde020f15e79534e0d34853201cd24d775d')throw Error('Complete unchanged original initialization evidence is required');
+const models=new Map();for(const name of['rom-common-nsbxx-animation','rom-common-nsbxx-name-match']){const onnx=await readFile(resolve(root,'graph-v2',name+'.onnx')),ir=JSON.parse(await readFile(resolve(root,'graph-v2',name+'.json')));models.set(name,{name,onnx,ir,sha256:hash(onnx)});}
+const ort=await loadLocalOrt(option('--ort-dir')),executor=createGraphExecutor({models,ortRuntime:ort}),report={schema:'dq9-common-nsbxx-initialize-rom-verification-v1',sourceSHA256:hash(sourceBytes),models:[...models.values()].map(({name,sha256})=>({name,sha256})),parserSHA256:hash(await readFile(resolve(root,'runtime/common-chr-data.mjs'))),fieldsCompared:0,mismatches:0,examples:[],cases:[],scope:'Whole original InitializeModelAnimation and selected JAC/MAM/MPT/MAT/VAV initializer through return. Supplied initial NSBXX signatures/count changes are declared per case. Every256-byte destination byte, complete model and complete raw animation file is compared, including untouched alignment/padding. This verifies initialization, not allocation, evaluation, frame advancement or physical rendering.'};
+async function call(name,input){const ir=models.get(name).ir,v={...ir.contract.defaults,...input},feeds=Object.fromEntries(ir.inputs.map(d=>[d.name,Array.isArray(v[d.name])?v[d.name]:[v[d.name]]]));const result=(await executor.runGraph(name,[feeds]))[0];if(!scalar(result,'supported'))throw Error('Unexpected unsupported initializer input');return result;}
+function compare(id,key,actual,expected){if(Array.isArray(expected)){if(!Array.isArray(actual)||actual.length!==expected.length)throw Error('Shape mismatch: '+key);expected.forEach((v,i)=>compare(id,key+'['+i+']',actual[i],v));return;}report.fieldsCompared++;if(actual!==expected){report.mismatches++;if(report.examples.length<60)report.examples.push({id,key,actual,expected});}}
+async function initialFile(c,key){const bytes=await readFile(c[key+'Path']);if(hash(bytes)!==c[key+'SHA256'])throw Error('Initial input hash mismatch');for(const patch of c[key+'Patches'])bytes[patch.offset]=patch.value;return bytes;}
+try{for(const original of source.results){
+  const c=original.case;if(!original.ok||!original.strictInitializedMemory||!original.completeFunctionExecuted)throw Error('Original initializer failed: '+c.id);
+  const before=report.mismatches,modelBytes=await initialFile(c,'model'),animationBytes=await initialFile(c,'animation'),m=inspectOriginalNSBXX(modelBytes).model,a=inspectOriginalNSBXX(animationBytes).animation;
+  if(a.byteOffset!==c.innerAnimationOffset||m.byteOffset!==c.internalModelOffset)throw Error('Structural original pointer mismatch');
+  const operands={signatureInitial:a.signatureInitial,signatureEnd:a.signatureEnd,modelBoneCount:m.headerBytes[23],modelMaterialCount:m.headerBytes[24],rawAnimationPointerU16:pair(0x023a0000+a.byteOffset),texturePointerU16:pair(c.texturePointer)};
+  let bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:0,animationBytes:c.initialDataBytes.slice(0,156)})).nextAnimationBytes;
+  if(a.jointTrackTargetBytes)for(const[trackIndex,targetBone]of a.jointTrackTargetBytes.entries())bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:1,trackIndex,targetBone,animationBytes:bytes})).nextAnimationBytes;
+  if(a.trackNames)for(const[trackIndex,targetBytes]of a.trackNames.entries()){const names=m.materialNames,match=await call('rom-common-nsbxx-name-match',{nameCount:names.length,namesBytes:Array.from({length:240},(_,i)=>names[Math.floor(i/16)]?.[i%16]??0),targetBytes});bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:2,trackIndex,materialIndex:scalar(match,'index'),animationBytes:bytes})).nextAnimationBytes;}
+  compare(c.id,'dataBytes',[...bytes,...c.initialDataBytes.slice(156)],original.dataBytes);compare(c.id,'modelBytes',Array.from(modelBytes),original.modelBytes);compare(c.id,'animationBytes',Array.from(animationBytes),original.animationBytes);
+  report.cases.push({id:c.id,signatureInitial:a.signatureInitial,signatureEnd:a.signatureEnd,boneCount:m.headerBytes[23],materialCount:m.headerBytes[24],declaredInitialPatchCount:c.modelPatches.length+c.animationPatches.length,mismatches:report.mismatches-before});
+}}finally{await executor.release();}
+report.passed=report.mismatches===0&&report.cases.length===source.results.length;await writeFile(option('--out'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({passed:report.passed,cases:report.cases.length,fields:report.fieldsCompared,mismatches:report.mismatches,examples:report.examples}));if(!report.passed)process.exitCode=1;

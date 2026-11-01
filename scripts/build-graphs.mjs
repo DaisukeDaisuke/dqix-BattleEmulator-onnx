@@ -60,6 +60,7 @@ export const stages = [
   'graph-v2/build-common-bcfg.mjs',
   'graph-v2/build-common-model3d.mjs',
   'graph-v2/build-common-nsbxx-animation.mjs',
+  'graph-v2/build-common-nsbxx-name-tree.mjs',
   'graph-v2/build-common-vram-allocator.mjs',
   'graph-v2/build-common-texture.mjs',
   'graph-v2/build-common-vram-staging.mjs',

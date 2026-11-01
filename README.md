@@ -126,7 +126,11 @@ AI対象callbackも共有グラフへ合成します。[`graph-v2/common-target-
 
 CCHR/CMOT側は実ROM命令を使う46呼出しとJSON再開3回を比較し、3,511,848項目が一致しました。実際のアーカイブ・モデル入力、確保失敗、JAC/MAM/MPTのAnimationData、パッケージ末尾追加、所有ノード、ロードタスク除去を検証しています。未初期化のBCFG名末尾380バイトは未知として除外します。5つの初期入力はアーカイブのモデル名1バイトを変更してモデル置換を避けた派生入力で、この変更を検証結果に記録します。ROM命令は変更しません。検証入口は[`scripts/verify-common-cchr-actor-rom.mjs`](scripts/verify-common-cchr-actor-rom.mjs)です。
 
-実機へのVRAM転送、NSBMDモデルの置換、一部のAnimationData、資源リストを解放する後処理は、それぞれの未実装境界を保持します。フレームの後処理には計算済みの資源数・タスク数・所有リストを渡し、残る資源を空扱いにして完了させません。
+MAT/VAVの初期化は、元ROMの直接呼出し24ケース・407,224項目で一致しました。この比較では未知バイトの除外はありません。呼出し元のCCHRまで進めた8ケース・639,976項目も一致し、こちらはBCFG名末尾112バイトを未知として除外します。名前の検索は、短い辞書と16項目以上のPatricia辞書の両方を同じ共有ヘルパーで扱います。元の検索87ケース・1,212,171項目と494回のJSON再開、長辞書を接続したCCHR6ケース・479,982項目が一致しました。後者は宣言したモデル辞書・トラック名の初期入力変更を使い、BCFG名末尾84バイトを除外します。検証入口は[`scripts/verify-common-nsbxx-initialize-rom.mjs`](scripts/verify-common-nsbxx-initialize-rom.mjs)と[`scripts/verify-common-nsbxx-name-search-rom.mjs`](scripts/verify-common-nsbxx-name-search-rom.mjs)です。
+
+外部SafeAllocatorを使う通常ファイル読込は、共有アロケータで確保先を計算し、実際のヘッダー・読込先メモリー・ローダー状態へ書き込みます。0バイトのファイルでも元の確保処理が4バイトを予約して非NULLを返す挙動を保持します。元のファイルシステム登録・アロケータ作成・Processを連続実行した15ケースを通常実行とJSON再開で照合し、30比較・5,908,788項目、再開23回で一致しました。比較は全ローダー項目、全タスクの名前とポインター、確保順序とカーソル、既知のヒープ・scratch全バイトを含みます。初期HMRFグローバルツリー20バイトは別producerのため比較対象外とし、比較合計600バイトを除外します。初期カーソルは領域入力から作成グラフで計算し、観測した確保結果を入力にしません。検証入口は[`scripts/verify-common-resource-file-process-rom.mjs`](scripts/verify-common-resource-file-process-rom.mjs)です。
+
+実機へのVRAM転送、NSBMDモデルの置換、64項目を超えるAnimationData、GP1/GP2読込、資源リストを解放する後処理は、それぞれの未実装境界を保持します。フレームの後処理には計算済みの資源数・タスク数・所有リストを渡し、残る資源を空扱いにして完了させません。
 
 ### モデルのダウンロード単位
 Hugging Faceへは、共通数値処理・演出とカメラ・明示CPU倍精度の3個の`models/*.onnxbundle.gz`を公開します。各パックにONNX本体とグラフIRを収録し、全メンバーのSHA-256と元のモデル境界を保持します。モデル数が増えてもダウンロード単位は最大3個です。`runtime-index.json`の`delivery`と`bundles`が、実際の要求数・モデル数・圧縮前後のサイズを宣言します。

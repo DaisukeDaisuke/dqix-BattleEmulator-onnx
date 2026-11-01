@@ -4,12 +4,13 @@ import {validateGraphInputs} from '../graph-v2/input-domains.mjs';
 import {createCommonHmrfRunner} from './common-hmrf.mjs';
 import {createCommonBCFGRunner} from './common-bcfg.mjs';
 import {inspectOriginalChrArchive} from './common-chr-data.mjs';
+import {createCommonNsbxxNameLookupRunner,COMMON_NSBXX_NAME_LOOKUP_MODELS} from './common-nsbxx-name-lookup.mjs';
 
 export const COMMON_ANIMATION_INSTALL_MODELS=[
  'rom-common-hmrf-allocator',
  'rom-common-animation-install','rom-common-character-registration','rom-common-character-initialize',
  'rom-common-chr-allocation','rom-common-chr-records','rom-common-bcfg','rom-common-model3d',
- 'rom-common-nsbxx-name-match','rom-common-nsbxx-animation','rom-common-vram-allocator',
+ ...COMMON_NSBXX_NAME_LOOKUP_MODELS,'rom-common-nsbxx-animation','rom-common-vram-allocator',
  'rom-common-vram-context','rom-common-texture-header','rom-common-texture-binding','rom-common-vram-staging'
 ];
 const clone=x=>structuredClone(x),scalar=(o,k)=>Number(o[k]?.[0]),pair=n=>[n%65536,Math.floor(n/65536)],word=p=>p[0]+65536*p[1],bytesOf=p=>p.flatMap(n=>[n&255,n>>>8]),same=(a,b)=>a[0]===b[0]&&a[1]===b[1];
@@ -34,6 +35,7 @@ export function createCommonAnimationInstallState(input){
 
 export async function createCommonAnimationInstallRunner({runGraph,getModel,onTrace,onAllocation}={}){
  const allocator=await createCommonHmrfRunner({runGraph,getModel,onTrace});
+ const nameLookup=createCommonNsbxxNameLookupRunner({runGraph,getModel,onTrace});
  async function call(name,input){
   const ir=await getModel(name);if(!ir)pending('Missing shared installer model '+name);
   const v={...ir.contract.defaults,...input},feeds=Object.fromEntries(ir.inputs.map(d=>[d.name,Array.isArray(v[d.name])?v[d.name]:[v[d.name]]])),errors=validateGraphInputs(ir.contract,feeds);
@@ -114,7 +116,7 @@ export async function createCommonAnimationInstallRunner({runGraph,getModel,onTr
          const dataLength=word(data.requestBytesU16);if(dataLength>156)pending('AnimationData exceeds the shared64-entry buffer');
          let bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:0,animationBytes:[...read(data.returnPointerU16,dataLength),...Array(156-dataLength).fill(0)]})).nextAnimationBytes;
          if(a.jointTrackTargetBytes)for(const[trackIndex,targetBone]of a.jointTrackTargetBytes.entries())bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:1,trackIndex,targetBone,animationBytes:bytes})).nextAnimationBytes;
-         if(a.trackNames)for(const[trackIndex,targetBytes]of a.trackNames.entries()){const names=metadata.model.materialNames;if(names.length>15)pending('Original long animation material dictionary needs its Patricia-tree producer');const match=await call('rom-common-nsbxx-name-match',{nameCount:names.length,namesBytes:Array.from({length:240},(_,i)=>names[Math.floor(i/16)]?.[i%16]??0),targetBytes});bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:2,trackIndex,materialIndex:scalar(match,'index'),animationBytes:bytes})).nextAnimationBytes;}
+         if(a.trackNames)for(const[trackIndex,targetBytes]of a.trackNames.entries()){const dictionary=metadata.model.materialDictionary;if(!dictionary)pending('Original animation material dictionary bytes are absent');const match=await nameLookup.lookup({dictionary,targetBytes});if(!match.complete)pending(match.pending);bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:2,trackIndex,materialIndex:match.index,animationBytes:bytes})).nextAnimationBytes;}
          write(data.returnPointerU16,bytes.slice(0,dataLength));await records(4,{slot,animationDataPointerU16:data.returnPointerU16});
         }
        }
