@@ -16,6 +16,7 @@ import sys
 SCHEMA = "dq9-onnx-release-v1"
 MANIFEST_NAME = "release-manifest.json"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+MAX_BUNDLE_BYTES = 512 * 1024 * 1024
 
 
 def sha256_file(path: Path) -> str:
@@ -45,10 +46,57 @@ def artifact_path(root: Path, name: str) -> Path:
     return current
 
 
+def model_bundle_members(path: Path, descriptor: dict | None = None):
+    """Read byte-identical ONNX/IR members from one bounded transfer bundle."""
+    with gzip.open(path, "rb") as stream:
+        raw = stream.read(MAX_BUNDLE_BYTES + 1)
+    if len(raw) < 12 or len(raw) > MAX_BUNDLE_BYTES or raw[:8] != b"DQ9ONNX1":
+        raise ValueError("Invalid model bundle magic or expanded byte count")
+    header_size = int.from_bytes(raw[8:12], "little")
+    payload = 12 + header_size
+    if header_size < 2 or header_size > 1024 * 1024 or payload > len(raw):
+        raise ValueError("Invalid model bundle header size")
+    header = json.loads(raw[12:payload].decode("utf-8"))
+    members = header.get("models")
+    if header.get("schema") != "dq9-onnx-bundle-v1" or not isinstance(members, list) or not members:
+        raise ValueError("Invalid model bundle schema")
+    if descriptor is not None:
+        if header.get("id") != descriptor.get("id") or len(raw) != descriptor.get("expandedBytes"):
+            raise ValueError("Model bundle identity or expanded byte count differs")
+        if [entry.get("name") for entry in members] != descriptor.get("models"):
+            raise ValueError("Model bundle membership differs")
+        if path.stat().st_size != descriptor.get("sizeBytes") or sha256_file(path) != descriptor.get("sha256"):
+            raise ValueError("Model bundle transfer hash differs")
+    names, offset = set(), 0
+    for entry in members:
+        name = entry.get("name")
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) or name in names:
+            raise ValueError("Invalid or duplicate bundled model")
+        names.add(name)
+        if any(type(entry.get(key)) is not int or entry[key] < 0 for key in ("offset", "length", "irOffset", "irLength")):
+            raise ValueError("Invalid model bundle range")
+        if entry["offset"] != offset or entry["length"] == 0 or entry["irLength"] == 0 or entry["irOffset"] != offset + entry["length"]:
+            raise ValueError("Model bundle ranges overlap or leave a gap")
+        end = entry["irOffset"] + entry["irLength"]
+        if payload + end > len(raw):
+            raise ValueError("Model bundle member exceeds its payload")
+        onnx_bytes = raw[payload + offset:payload + entry["irOffset"]]
+        ir_bytes = raw[payload + entry["irOffset"]:payload + end]
+        if hashlib.sha256(onnx_bytes).hexdigest() != entry.get("sha256") or hashlib.sha256(ir_bytes).hexdigest() != entry.get("irSha256"):
+            raise ValueError(f"Bundled model content differs: {name}")
+        ir = json.loads(ir_bytes.decode("utf-8"))
+        if ir.get("name") != name:
+            raise ValueError("Bundled model IR identity differs")
+        yield entry, onnx_bytes, ir
+        offset = end
+    if payload + offset != len(raw):
+        raise ValueError("Model bundle has trailing bytes")
+
+
 def validate_common_execution(root: Path, manifest: dict, artifacts: list[dict]) -> None:
     """Enforce one shared definition across the index, JSON and embedded PoC."""
     index = json.loads(artifact_path(root, "runtime-index.json").read_text(encoding="utf-8"))
-    if index.get("schema") != "dq9-runtime-index-v2":
+    if index.get("schema") != "dq9-runtime-index-v3":
         raise ValueError("The runtime index must describe the common battle path")
     common = index.get("commonProgram", {})
     path = common.get("path")
@@ -65,6 +113,33 @@ def validate_common_execution(root: Path, manifest: dict, artifacts: list[dict])
     if manifest["coverage"].get("battlePrograms") != 1 or manifest["coverage"].get("bossSpecificPrograms") is not False:
         raise ValueError("Coverage must declare one shared program and no boss-specific programs")
     model_hashes = {model["name"]: model["sha256"] for model in index.get("models", [])}
+    model_entries = {model["name"]: model for model in index.get("models", [])}
+    if len(model_entries) != len(index.get("models", [])):
+        raise ValueError("Runtime index model names are duplicated")
+    bundles = index.get("bundles", [])
+    bundle_paths = [bundle.get("path") for bundle in bundles]
+    if not 1 <= len(bundles) <= 3 or len(set(bundle_paths)) != len(bundle_paths):
+        raise ValueError("The release must contain at most three unique model bundles")
+    declared_bundles = {a["path"] for a in artifacts if a["path"].endswith(".onnxbundle.gz")}
+    if set(bundle_paths) != declared_bundles:
+        raise ValueError("Declared model bundles differ from the release inventory")
+    bundled_names = set()
+    for bundle in bundles:
+        for entry, onnx_bytes, ir in model_bundle_members(artifact_path(root, bundle["path"]), bundle):
+            name = entry["name"]
+            expected = model_entries.get(name, {})
+            if name in bundled_names or expected.get("bundle") != bundle["path"]:
+                raise ValueError("Bundled model is duplicated or missing from the index")
+            for key in ("sha256", "irSha256", "executionProvider", "public"):
+                if expected.get(key) != entry.get(key):
+                    raise ValueError(f"Bundled model index binding differs: {name}.{key}")
+            bundled_names.add(name)
+    if bundled_names != set(model_entries):
+        raise ValueError("The index contains models absent from the bundles")
+    delivery = index.get("delivery", {})
+    if delivery.get("modelDownloadRequests") != len(bundles) or delivery.get("independentOnnxModels") != len(model_entries) or delivery.get("standaloneHtmlModelRequests") != 0 or delivery.get("modelBytesUnchanged") is not True:
+        raise ValueError("Model download accounting differs from the artifacts")
+    artifact_path(root, delivery.get("loader"))
     bound_hashes = {module["name"]: module["sha256"] for module in program.get("modules", [])}
     if not bound_hashes or len(bound_hashes) != len(program["modules"]) or common.get("moduleHashes") != bound_hashes:
         raise ValueError("Common program module set is absent, duplicated or inconsistent")
@@ -100,6 +175,11 @@ def validate_common_execution(root: Path, manifest: dict, artifacts: list[dict])
     if assets.get("actionCoverage") != action_coverage:
         raise ValueError("HTML action-effect coverage differs from the published data")
     embedded_hashes = {model["name"]: model["sha256"] for model in assets.get("models", [])}
+    if embedded_hashes != model_hashes:
+        raise ValueError("HTML and transfer bundles contain different model sets")
+    for model in assets["models"]:
+        if hashlib.sha256(base64.b64decode(model["onnx"], validate=True)).hexdigest() != model["sha256"]:
+            raise ValueError("HTML embedded model bytes differ from their SHA-256")
     if any(embedded_hashes.get(name) != digest for name, digest in bound_hashes.items()):
         raise ValueError("HTML shared module set differs from the published definition")
 
@@ -154,8 +234,8 @@ def load_release(directory: Path) -> tuple[dict, list[dict]]:
         present.update((Path(current) / name).relative_to(root).as_posix() for name in files)
     if present != expected:
         raise ValueError(f"Release inventory differs: unlisted={sorted(present - expected)}, missing={sorted(expected - present)}")
-    if not any(entry["path"].endswith(".onnx") for entry in checked):
-        raise ValueError("Release contains no ONNX graph")
+    if not any(entry["path"].endswith(".onnxbundle.gz") for entry in checked):
+        raise ValueError("Release contains no ONNX model bundle")
     if not any(entry["path"].endswith(".html") for entry in checked):
         raise ValueError("Release contains no HTML PoC")
     validate_common_execution(root, manifest, checked)
@@ -171,11 +251,11 @@ def check_onnx(artifacts: list[dict]) -> int:
 
     count = 0
     for artifact in artifacts:
-        if not artifact["path"].endswith(".onnx"):
+        if not artifact["path"].endswith(".onnxbundle.gz"):
             continue
-        # A path lets ONNX check large models without an extra serialized copy.
-        onnx.checker.check_model(str(artifact["local_path"]), full_check=True)
-        count += 1
+        for entry, onnx_bytes, ir in model_bundle_members(artifact["local_path"]):
+            onnx.checker.check_model(onnx_bytes, full_check=True)
+            count += 1
     return count
 
 

@@ -1,4 +1,4 @@
-import {tensionCoefficient,tensionBonus} from './encounter-expansion/build-tension-primitives.mjs';
+import {commonTensionCoefficient as tensionCoefficient,commonTensionBonus as tensionBonus} from './common-tension-reduction.mjs';
 
 export const COMMON_METAL_DAMAGE_AUTHORITY={path:'restored/dqix-decomp-decomp-matching/src/Combat/Overlay_24/func_ov024_021e6a90.cpp',sha256:'cfbcf59823f0114318cf642726d56851de69e7d5bb9aa7bbbc7c9c8fb5a0891e',symbol:'JPN021e7328 / USA021e6a90',scope:'The same common postprocess runs for every target. Metal identity is an input decoded from the original typed monster definition, not an encounter/program selector.'};
 export function decodeMetalRuleFields(action){return{metalDamageFlag:action.w10>>>24&1,metalPhysicalKind:action.w08>>>8&3};}

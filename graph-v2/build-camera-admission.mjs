@@ -5,6 +5,7 @@ import {readFile,writeFile,rename} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {Graph} from './graph-builder.mjs';
 import {sourceSHA256} from '../data/source-authority.mjs';
+import {commonMissingProgramArchiveKind} from './build-common-presentation-resource.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const sourceRoot=new URL('../restored/dqix-decomp-decomp-matching/',import.meta.url);
@@ -40,10 +41,10 @@ export async function buildCameraProgramAdmission(){
  const resourceCategory=g.floor(g.mul(word18[1],1/16));
  // Program initialization always calls JPN02171830, which queues actmsg.nat.
  // The separate positive-message-ID request is excluded by the initial-zero
- // message contract. Missing-program category0 requests actetc.nsarc.
- contract.resourceContract='Initial command+4, source message-cache+2c and program runtime cached message ID are zero; initial loader queue is empty. A selected program unconditionally requests actmsg.nat via actual02171830, independent of the separate conditional message path. Missing-program operation!=34/category0 requests actetc.nsarc. Resource-request metadata is modeled; loading/allocator/queue addresses are not. Other fallback categories are explicitly unsupported.';
- const unsupportedResource=g.and(resourceRequest,g.not(g.eq(resourceCategory,0))),supported=g.and(normal.complete,specialPrograms.complete,g.not(unsupportedSpecial),g.not(unsupportedResource));
- for(const[name,value]of Object.entries({selectedProgram:selected,selectorReached:reached,membershipCount:normal.count,secondProgram:normal.second,resetOverride:reset,specialOverride:g.and(enabled,sourceExists,special),programProjection:g.cat([pick(selected,allProjection,0),pick(selected,allType,0)]),nextObjectFlagsBytes:g.cat(objectResult),nextPresentationState:g.where(resourceRequest,4,state),resourceRequest,resourceCategory,messageResourceRequest:reached,resourceRequestCount:g.add(g.cast(reached,'float32'),g.cast(resourceRequest,'float32')),supported,consumed:g.mul(h[0],0)}))g.output(value,name);
+ // message contract. Archive kind0=etc,1=party skill/item,2=spell.
+ contract.resourceContract='Initial command+4, source message-cache+2c and program runtime cached message ID are zero. A selected program unconditionally requests actmsg.nat via actual02171830. A missing program with operation!=34 requests archive kind2 for category2, kind1 for category1/4 with party source0..3, and kind0 otherwise. Resource-request metadata is modeled here; the separate state4 controller must execute actual loading, NARC lookup, parsing and program initialization.';
+ const resourceArchiveKind=commonMissingProgramArchiveKind(g,resourceCategory,h[1]),supported=g.and(normal.complete,specialPrograms.complete,g.not(unsupportedSpecial));
+ for(const[name,value]of Object.entries({selectedProgram:selected,selectorReached:reached,membershipCount:normal.count,secondProgram:normal.second,resetOverride:reset,specialOverride:g.and(enabled,sourceExists,special),programProjection:g.cat([pick(selected,allProjection,0),pick(selected,allType,0)]),nextObjectFlagsBytes:g.cat(objectResult),nextPresentationState:g.where(resourceRequest,4,state),resourceRequest,resourceCategory,resourceArchiveKind,messageResourceRequest:reached,resourceRequestCount:g.add(g.cast(reached,'float32'),g.cast(resourceRequest,'float32')),supported,consumed:g.mul(h[0],0)}))g.output(value,name);
  return g;
 }
 if(process.argv[1]&&new URL(`file://${process.argv[1]}`).href===import.meta.url){for(const g of[await buildCameraAdmissionEntry(),await buildCameraProgramAdmission()]){const model=g.model();for(const[ext,value]of[['onnx',model],['json',JSON.stringify(g.json(),null,2)+'\n']]){const p=new URL(`${g.name}.${ext}`,import.meta.url),t=new URL(`${g.name}.${ext}.pending-${process.pid}`,import.meta.url);await writeFile(t,value);await rename(t,p);}console.log(JSON.stringify({name:g.name,nodes:g.nodes.length,bytes:model.length,sha256:hash(model)}));}}

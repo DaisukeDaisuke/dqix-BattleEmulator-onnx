@@ -18,9 +18,9 @@ function validateRetained(row,lane){
  const state=[s.counter,s.globals7[0],s.globals7[1],s.globals7[3],s.globals7[4]];state.forEach((x,i)=>eq(row.cameraState[i],x,`cameraState${i}`));eq(+!!row.cameraInitialized,s.initialized,'cameraInitialized');
  for(let i=0;i<2;i++)eq(v.getUint16(0x21c+2*i,true),row.cameraRngPointerU16[i],`RNGpointer${i}`);
 }
-export async function createCameraRetainedMemoryRunner({runGraph,runDoubleGraph,getModel,onTrace}={}){
+export async function createCameraRetainedMemoryRunner({runGraph,runDoubleGraph,getModel,onTrace,admissionFactory}={}){
  if(typeof runDoubleGraph!=='function')throw Error('Explicit CPU DOUBLE provider required');
- const geometry=await createCameraEnclosingGeometryRunner({runGraph,runDoubleGraph,getModel,onTrace});
+ const geometry=await createCameraEnclosingGeometryRunner({runGraph,runDoubleGraph,getModel,onTrace,admissionFactory});
  async function call(name,rows,phase){if(!rows.length)return[];const ir=await getModel(name);for(const[i,r]of rows.entries()){const errors=validateGraphInputs(ir.contract,r);if(errors.length)throw Error(`${name} lane${i}: ${errors.join('; ')}`);}const output=await runGraph(name,rows,{phase});if(onTrace)await onTrace({model:name,phase,inputs:clone(rows),outputs:clone(output)});return output;}
  async function run({rows,maxRouteAttempts=10861}){
   rows.forEach(validateRetained);

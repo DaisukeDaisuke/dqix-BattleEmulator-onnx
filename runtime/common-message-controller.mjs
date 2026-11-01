@@ -2,19 +2,21 @@
 // Original asset bytes and names are input data. No observed frame/output is used.
 import {compileStaticMessage,parseOriginalMessageCatalog} from './common-message-data.mjs';
 import {createCommonMessageWindowRunner,initialCommonMessageWindow} from './common-message-window.mjs';
+import {createCommonResourceLoaderRunner,initialCommonResourceLoader} from './common-resource-loader.mjs';
 
-export const COMMON_MESSAGE_MODELS=['rom-common-message-queue','rom-common-message-controller','rom-common-start-messages','rom-common-message-window-begin','rom-common-message-font-step','rom-common-message-consume-step','rom-common-presentation-controller-wait'];
+export const COMMON_MESSAGE_MODELS=['rom-common-message-queue','rom-common-message-controller','rom-common-message-formatter-stack','rom-common-start-messages','rom-common-message-window-begin','rom-common-message-font-step','rom-common-message-consume-step','rom-common-presentation-controller-wait'];
 const clone=x=>structuredClone(x),scalar=(o,k)=>Number(o[k][0]),suffix=k=>k[0].toUpperCase()+k.slice(1);
 const queueFields=['messageIds','targets','extraSources','serials','holds','types','contextsU16'];
 const words=(n)=>[n%65536,Math.floor(n/65536)];
 const toBytes=x=>x instanceof Uint8Array?x:typeof x==='string'?Uint8Array.from(x.match(/../g)??[],s=>Number.parseInt(s,16)):Uint8Array.from(x??[]);
 
-export function initialCommonMessageController(){
-  return{queue:{messageIds:Array(16).fill(0),targets:Array(16).fill(0),extraSources:Array(16).fill(0),serials:Array(16).fill(0),holds:Array(16).fill(0),types:Array(16).fill(0),contextsU16:Array(32).fill(0),active:0,serialCounter:0,cursor:0},phase:0,holdTimer:0,defaultHold:750,savedSource:0,contextU16:[0,0],scriptEnabled:false,secondaryReady:false,secondaryTaskPresent:false,secondaryTaskDecoded:false,primaryAllocatorPresent:false,primaryTask:null,catalog:null,window:initialCommonMessageWindow()};
+export function initialCommonMessageController({resourceLoader}={}){
+  return{queue:{messageIds:Array(16).fill(0),targets:Array(16).fill(0),extraSources:Array(16).fill(0),serials:Array(16).fill(0),holds:Array(16).fill(0),types:Array(16).fill(0),contextsU16:Array(32).fill(0),active:0,serialCounter:0,cursor:0},phase:0,holdTimer:0,defaultHold:750,savedSource:0,contextU16:[0,0],scriptEnabled:false,secondaryReady:false,secondaryTaskPresent:false,secondaryTaskDecoded:false,primaryAllocatorPresent:false,primaryTaskId:-1,primaryTask:null,loader:resourceLoader?initialCommonResourceLoader(resourceLoader):null,catalog:null,window:initialCommonMessageWindow()};
 }
 
 export function createCommonMessageControllerRunner({runGraph,getModel,fonts,assets,namesById={},actionNamesById={},onTrace}={}){
   const window=createCommonMessageWindowRunner({runGraph,fonts,onTrace});
+  const loader=createCommonResourceLoaderRunner({runGraph,getModel,assets,onTrace});
   async function call(name,input){const model=await getModel(name),values={...model.contract.defaults,...input},feeds=Object.fromEntries(model.inputs.map(d=>[d.name,Array.isArray(values[d.name])?values[d.name]:[values[d.name]]])),out=(await runGraph(name,[feeds]))[0];await onTrace?.({name,feeds:clone(feeds),result:clone(out)});return out;}
   async function queue(state,operation,request={}){
     const q=state.queue,o=await call('rom-common-message-queue',{...q,operation,...request});
@@ -33,16 +35,18 @@ export function createCommonMessageControllerRunner({runGraph,getModel,fonts,ass
     return out;
   }
   return{
-    window,queue,control,
+    window,queue,control,loader,
     async initialize(state,{resourceRequests,primaryAllocatorPresent,secondaryTaskPresent=false}={}){
       await queue(state,2);await control(state,1);state.scriptEnabled=false;state.secondaryReady=false;state.secondaryTaskPresent=secondaryTaskPresent;state.secondaryTaskDecoded=false;state.primaryAllocatorPresent=!!primaryAllocatorPresent;state.catalog=null;
       const primary=resourceRequests?.filter(r=>r.outerFilename==='actmsg.nat'&&r.directory===20&&r.innerFilename==='');
       if(!primary||primary.length!==1||resourceRequests.length!==1)throw Error('The admitted empty-script resource path requires one original actmsg.nat request');
-      state.primaryTask={...clone(primary[0]),readComplete:false,decodeComplete:false,bytes:null};return state;
+      if(state.loader){const queued=await loader.queue(state.loader,primary[0]);if(!queued.complete)throw Object.assign(Error(queued.pending),{code:'DQ9_PRESENTATION_BOUNDARY'});state.primaryTaskId=queued.id;state.primaryTask=loader.task(state.loader,queued.id);}
+      else state.primaryTask={...clone(primary[0]),readComplete:false,decodeComplete:false,bytes:null};return state;
     },
     // A functional memory-file operation. Incomplete input remains pending; no
     // elapsed frame or fixed delay can turn it into a completed resource.
-    processResource(state){
+    async processResource(state){
+      if(state.loader){const result=state.loader.taskCount?await loader.process(state.loader):{complete:true,completed:0};state.primaryTask=loader.task(state.loader,state.primaryTaskId);return result;}
       if(!state.primaryTask||state.primaryTask.readComplete)return{processed:false};
       const supplied=assets?.['actmsg.nat'];if(!supplied)return{processed:false,pending:'actmsg.nat bytes are unavailable'};
       const data=toBytes(supplied.bytes??supplied.hex??supplied),length=supplied.byteLength??data.length;
@@ -54,7 +58,7 @@ export function createCommonMessageControllerRunner({runGraph,getModel,fonts,ass
       if(scalar(o,'removeSecondaryTask'))state.secondaryTaskPresent=false;
       if(scalar(o,'requiresPrimaryDecode')){
         try{const catalog=parseOriginalMessageCatalog(state.primaryTask.bytes);state.catalog={kind:catalog.kind,count:catalog.count,records:Object.fromEntries([...catalog.records].map(([id,bytes])=>[id,Array.from(bytes)]))};}catch(error){return{...result,pending:'Original message catalog decode: '+error.message};}
-        state.primaryTask.decodeComplete=true;await control(state,3,{primaryDecodeComplete:true});state.primaryTask=null;result.resourceDecoded=true;
+        state.primaryTask.decodeComplete=true;await control(state,3,{primaryDecodeComplete:true});if(state.loader)await loader.remove(state.loader,state.primaryTaskId);state.primaryTaskId=-1;state.primaryTask=null;result.resourceDecoded=true;
       }else if(scalar(o,'requiresController')){
         const wait=await call('rom-common-presentation-controller-wait',{active:state.queue.active,phase:state.phase,commandPresent:!!command,messageWindowIdle:state.window.windowState===0,holdTimer:state.holdTimer,deltaU16,savedSource:state.savedSource,contextU16:state.contextU16});
         state.phase=scalar(wait,'nextPhase');state.holdTimer=scalar(wait,'nextHoldTimer');state.savedSource=scalar(wait,'nextSavedSource');state.contextU16=[...wait.nextContextU16];
@@ -64,8 +68,9 @@ export function createCommonMessageControllerRunner({runGraph,getModel,fonts,ass
           const text=state.catalog?.records[String(head.messageId)];let compiled=null;
           try{compiled=text?.length?compileStaticMessage(text,{substitutions:substitutions(text,command,head)}):null;}catch(error){return{...result,pending:'Original message formatter: '+error.message};}
           if(compiled&&stackAbi!=='jpn-component-world-dispatch-v1')return{...result,pending:'Exact nested message formatter call-stack ABI is required'};
+          if(compiled&&compiled.expandedBytes.length>255)return{...result,pending:'The original256-byte message formatter buffer requires a bounded produced string'};
           await queue(state,1);
-          if(compiled){state.window=await window.begin(state.window,compiled);const shown=await control(state,2,{headSerial:head.serial,headContextU16:head.contextU16,headHold:head.hold,nonemptyTextShown:true});result.messageShown=true;result.clearsNestedRow4Word0=!!scalar(shown,'clearsNestedRow4Word0');result.messageId=head.messageId;}
+          if(compiled){state.window=await window.begin(state.window,compiled);const shown=await control(state,2,{headSerial:head.serial,headContextU16:head.contextU16,headHold:head.hold,nonemptyTextShown:true});result.messageShown=true;result.clearsNestedRow4Word0=!!scalar(shown,'clearsNestedRow4Word0');result.formattedBytes=Array.from(compiled.expandedBytes);result.messageId=head.messageId;}
         }
       }
       return result;

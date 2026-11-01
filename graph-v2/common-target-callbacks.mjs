@@ -24,6 +24,9 @@ export const COMMON_TARGET_INPUTS={
   ...Object.fromEntries(Object.entries(COMMON_POPULATION_TARGET_INPUTS).map(([key,value])=>[key,{dtype:'float32',label:key,...value}])),
   actorFlagBytes:{width:4,dtype:'float32',default:[0,0,0,0],domain:{min:0,max:255,integer:true},label:'行動者の現在stats18の4byte'},
   actorStanceRanks:{width:2,dtype:'float32',default:[0,0],domain:{min:-4,max:3,integer:true},label:'行動者のsigned3-bit rank8/9'},
+  partyDefend:{width:4,dtype:'float32',default:Array(4).fill(0),domain:{min:0,max:255,integer:true},label:'味方stats21の防御モード'},
+  enemyDefend:{width:8,dtype:'float32',default:Array(8).fill(0),domain:{min:0,max:255,integer:true},label:'敵stats21の防御モード'},
+  partyTensionStage:{width:4,dtype:'float32',default:Array(4).fill(0),domain:{min:0,max:255,integer:true},label:'味方stats24の保存された符号なしbyte'},
   enemyOriginalMonsterIds:{width:8,dtype:'float32',default:Array(8).fill(-1),domain:{min:-1,max:65535,integer:true},label:'敵object.enemyType（AI定義IDとは独立、不在・不明は-1）'},
   enemyCoverSources:{width:8,dtype:'float32',default:Array(8).fill(-1),domain:{min:-32768,max:32767,integer:true},label:'敵stats+0x2cのかばう側ID（signed16）'},
   actorHp:{width:1,dtype:'float32',default:100,domain:{min:0,max:65535,integer:true},label:'行動者の現在HP'},
@@ -39,6 +42,11 @@ const authority=[
   {file:'src/Combat/Overlay_24/func_ov024_021f1330.cpp',address:'JPN0x021f1afc',callback:56,sha256:'a81edb8e37867dcdafc0713bf85d0a02e9cb04824212a12222581c68d4b0be30'},
   {file:'src/Combat/Overlay_24/func_ov024_021f21b4.cpp',address:'JPN0x021f2980',callback:72,sha256:'a06e960a46c7a35ae121146e0998e5a4c3a3a4f7397b96f0735dae19acedad4b'},
   {file:'src/Combat/Overlay_24/func_ov024_021f2c30.cpp',address:'JPN0x021f33fc',callback:84},
+  {file:'src/Combat/Overlay_24/func_ov024_021f1f64.cpp',address:'JPN0x021f2730',callback:69},
+  {file:'src/Combat/Overlay_24/func_ov024_021f23e0.cpp',address:'JPN0x021f2bac',callback:74},
+  {file:'src/Combat/Overlay_24/func_ov024_021f2ab4.cpp',address:'JPN0x021f3280',callback:83},
+  {file:'src/Combat/Overlay_24/func_ov024_021f57a8.cpp',address:'JPN0x021f5f74',callback:140},
+  {file:'src/Combat/Overlay_24/func_ov024_021eda78.cpp',scope:'Callback69 raw beneficial-state predicate, including exact defend modes1/2/4/5'},
   {file:'src/Combat/Overlay_24/func_ov024_021f2754.cpp',address:'JPN0x021f2f20',callback:80,sha256:'49bd5b66ddf582ccf4147ae90a4bf77e03606a42d7dab54f75c02fd0dcf847fd'},
   {file:'src/Combat/Overlay_24/func_ov024_021f286c.cpp',address:'JPN0x021f3038',callback:81,sha256:'716925b5e725e07eb5eef539ac899ca2fa804de59d14034c39465439ea4cd6a9'},
   {file:'src/Combat/Overlay_24/func_ov024_021f3168.cpp',address:'JPN0x021f3934',callback:90,sha256:'15ab59c68d2f3c66d3f35f7102e48fc936090a0810423990ae1c1aebf56f3582'},
@@ -54,10 +62,15 @@ function finish(g){
 }
 
 export function commonTargetCallbacks(g,x,previous,partyGraph){
-  const attackSelector=g.eq(x.selectorIndex,84),rankSelector=g.or(g.eq(x.selectorIndex,72),attackSelector),ordinaryCover=g.or(g.eq(x.selectorIndex,80),g.eq(x.selectorIndex,81)),coverSelector=g.or(g.eq(x.selectorIndex,159),ordinaryCover),breathSelector=g.eq(x.selectorIndex,56),selfMagicSelector=g.eq(x.selectorIndex,90),barrierSelector=g.or(breathSelector,selfMagicSelector),selected=g.or(rankSelector,coverSelector,barrierSelector);
+  const attackSelector=g.eq(x.selectorIndex,84),magicSelector=g.eq(x.selectorIndex,74),dispelSelector=g.eq(x.selectorIndex,69),tensionSelector=g.eq(x.selectorIndex,83),rankSelector=g.or(g.eq(x.selectorIndex,72),attackSelector,magicSelector,dispelSelector,tensionSelector),ordinaryCover=g.or(g.eq(x.selectorIndex,80),g.eq(x.selectorIndex,81)),coverSelector=g.or(g.eq(x.selectorIndex,159),ordinaryCover),breathSelector=g.eq(x.selectorIndex,56),selfMagicSelector=g.eq(x.selectorIndex,90),barrierSelector=g.or(breathSelector,selfMagicSelector),selected=g.or(rankSelector,coverSelector,barrierSelector);
   const old=g.inline(previous,{...x,enabled:g.and(x.enabled,g.not(selected))},'shared_callback_previous_'+g.index);
-  const ids=g.split(x.ids,4),present=g.split(x.present,4),candidate=g.split(x.candidate,4),dead=g.split(x.dead,4),excluded=g.split(x.excluded,4),defense=g.split(x.defense,4),partyRanks=g.split(x.partyRankFields,40),rank=g.split(x.defenseRank,4).map((value,i)=>g.where(attackSelector,partyRanks[i*10],value));
-  const enemyAttackRank=g.split(x.enemyAttackRank,8),enemyIds=g.split(g.cast(x.enemyIds,'float32'),8),enemyPresent=g.split(x.enemyPresent,8),enemyCandidate=g.split(x.enemyCandidate,8),enemyDead=g.split(x.enemyDead,8),enemyExcluded=g.split(x.enemyExcluded,8),groups=g.split(g.cast(x.enemyGroups,'float32'),8),enemyDefense=g.split(x.enemyDefense,8),enemyRank=g.split(x.enemyDefenseRank,8).map((value,i)=>g.where(attackSelector,enemyAttackRank[i],value)),enemyTypes=g.split(x.enemyOriginalMonsterIds,8),covered=g.split(x.enemyCoverSources,8);
+  const ids=g.split(x.ids,4),present=g.split(x.present,4),candidate=g.split(x.candidate,4),dead=g.split(x.dead,4),excluded=g.split(x.excluded,4),defense=g.split(x.defense,4),partyRanks=g.split(x.partyRankFields,40),rank=g.split(x.defenseRank,4).map((value,i)=>g.where(magicSelector,partyRanks[i*10+6],g.where(attackSelector,partyRanks[i*10],value)));
+  const enemyAttackRank=g.split(x.enemyAttackRank,8),enemyMagicRank=g.split(x.enemyBarrierRank,8),enemyIds=g.split(g.cast(x.enemyIds,'float32'),8),enemyPresent=g.split(x.enemyPresent,8),enemyCandidate=g.split(x.enemyCandidate,8),enemyDead=g.split(x.enemyDead,8),enemyExcluded=g.split(x.enemyExcluded,8),groups=g.split(g.cast(x.enemyGroups,'float32'),8),enemyDefense=g.split(x.enemyDefense,8),enemyRank=g.split(x.enemyDefenseRank,8).map((value,i)=>g.where(magicSelector,enemyMagicRank[i],g.where(attackSelector,enemyAttackRank[i],value))),enemyTypes=g.split(x.enemyOriginalMonsterIds,8),covered=g.split(x.enemyCoverSources,8);
+  const statusBytes=g.split(x.partyStatusBytes,16),enemyStatusBytes=g.split(x.enemyStatusBytes,32),partyDefend=g.split(x.partyDefend,4),enemyDefend=g.split(x.enemyDefend,8),rawBit=(bytes,n)=>{const q=g.floor(g.mul(bytes[n>>>3],2**-(n&7)));return g.gt(g.sub(q,g.mul(g.floor(g.mul(q,.5)),2)),0);};
+  const predicate=(status,mode,currentDefense,currentRank)=>g.or(
+    g.and(dispelSelector,g.or(...[9,20,21,22,26,27,28,29,30,31].map(n=>rawBit(status,n)),...[1,2,4,5].map(n=>g.eq(mode,n)))),
+    g.and(tensionSelector,g.or(rawBit(status,23),rawBit(status,24))),
+    g.and(g.not(g.or(dispelSelector,tensionSelector)),g.or(g.not(g.eq(x.selectorIndex,72)),g.gt(currentDefense,0)),g.gt(currentRank,-2)));
   const eligible=ids.map((_,i)=>g.and(present[i],candidate[i],g.not(dead[i]),g.not(excluded[i]))),partyCount=sum(g,eligible);
   // 021edf00 accepts a live anger object even when it is excluded from an
   // ordinary roster. Filtering that single object must not reopen the roster.
@@ -65,11 +78,11 @@ export function commonTargetCallbacks(g,x,previous,partyGraph){
   const rageParty=ids.map((id,i)=>g.and(rageGate,g.eq(id,x.rageId),present[i],g.not(dead[i])));
   const rageEnemies=enemyIds.map((id,i)=>g.and(rageGate,g.eq(id,x.rageId),enemyPresent[i],g.not(enemyDead[i])));
   const rage=g.or(...rageParty,...rageEnemies),rageKnown=g.or(g.lt(x.rageId,0),...ids.map(id=>g.eq(id,x.rageId)),...enemyIds.map(id=>g.eq(id,x.rageId)));
-  const filtered=eligible.map((e,i)=>g.and(selectBool(g,rage,rageParty[i],e),g.or(attackSelector,g.gt(defense[i],0)),g.gt(rank[i],-2)));
-  const filteredEnemies=rageEnemies.map((e,i)=>g.and(e,g.or(attackSelector,g.gt(enemyDefense[i],0)),g.gt(enemyRank[i],-2)));
+  const filtered=eligible.map((e,i)=>g.and(selectBool(g,rage,rageParty[i],e),predicate(statusBytes.slice(i*4,i*4+4),partyDefend[i],defense[i],rank[i])));
+  const filteredEnemies=rageEnemies.map((e,i)=>g.and(e,predicate(enemyStatusBytes.slice(i*4,i*4+4),enemyDefend[i],enemyDefense[i],enemyRank[i])));
   const filteredCount=g.add(sum(g,filtered),sum(g,filteredEnemies)),initialCount=g.where(rage,1,partyCount);
-  const defenseCoverage=g.and(g.or(g.not(rageGate),rageKnown),g.or(g.le(filteredCount,0),x.actorPresent));
-  const defenseActive=g.and(x.enabled,rankSelector,defenseCoverage),repeatActive=g.and(defenseActive,g.gt(filteredCount,0));
+  const defenseCoverage=g.or(g.and(tensionSelector,g.not(sourceTyped)),g.and(g.or(g.not(rageGate),rageKnown),g.or(g.le(filteredCount,0),x.actorPresent)));
+  const defenseActive=g.and(x.enabled,rankSelector,defenseCoverage,g.or(g.not(tensionSelector),sourceTyped)),directTensionRage=g.and(defenseActive,tensionSelector,rage),repeatActive=g.and(defenseActive,g.not(directTensionRage),g.gt(filteredCount,0));
   const directEnemyRage=g.or(...filteredEnemies.map((e,i)=>g.and(e,g.not(enemyExcluded[i]))));
   // The shared helper only uses actorId for the explicit external anger
   // return. Its party selector still receives the original source history.
@@ -82,11 +95,11 @@ export function commonTargetCallbacks(g,x,previous,partyGraph){
   for(let i=0;i<4;i++)defenseCount=append(defenseBuffer,defenseCount,ids[i],filtered[i]);
   for(let i=0;i<8;i++)defenseCount=append(defenseBuffer,defenseCount,enemyIds[i],filteredEnemies[i]);
   const enumeratedDefense=g.and(defenseActive,g.gt(initialCount,0));
-  const defenseNextCount=g.where(repeatActive,repeated.count,g.where(enumeratedDefense,0,x.previousTargetCount));
-  const defenseTargets=g.where(repeatActive,repeated.targets,g.where(enumeratedDefense,g.cat(defenseBuffer),x.previousTargets));
+  const defenseNextCount=g.where(directTensionRage,1,g.where(repeatActive,repeated.count,g.where(enumeratedDefense,0,x.previousTargetCount)));
+  const defenseTargets=g.where(directTensionRage,g.cat([x.rageId,...previousTargets.slice(1)]),g.where(repeatActive,repeated.targets,g.where(enumeratedDefense,g.cat(defenseBuffer),x.previousTargets)));
   // Callbacks72/84 return success after the repetition helper even when that
   // helper rejects an excluded anger object and writes a zero-count buffer.
-  const defenseSuccess=repeatActive;
+  const defenseSuccess=g.or(directTensionRage,repeatActive);
 
   const enemyEligible=enemyIds.map((_,i)=>g.and(enemyPresent[i],enemyCandidate[i],g.not(enemyDead[i]),g.not(enemyExcluded[i]),g.lt(groups[i],x.enemyGroupCount)));
   const enemyHp=g.split(x.enemyHp,8),enemyMaxHp=g.split(x.enemyMaxHp,8);
@@ -112,13 +125,22 @@ export function commonTargetCallbacks(g,x,previous,partyGraph){
   const nextSeed=g.where(barrierSelector,g.where(breathDraw,draw.seed,x.seed),g.where(rankSelector,g.where(repeatActive,repeated.seed,x.seed),g.where(coverDraw,draw.seed,x.seed)));
   const nextPosition=g.where(barrierSelector,g.add(x.position,g.cast(breathDraw,'int32')),g.where(rankSelector,g.where(repeatActive,repeated.position,x.position),g.add(x.position,g.cast(coverDraw,'int32'))));
   const success=selectBool(g,barrierSelector,g.or(selfMagicSuccess,breathDraw),selectBool(g,rankSelector,defenseSuccess,coverDraw)),coverage=selectBool(g,rankSelector,defenseCoverage,g.eq(0,0));
-  return commonStanceTargetCallbacks(g,x,commonPopulationTargetCallback(g,x,commonModifierTargetCallbacks(g,x,commonPoisonTargetCallbacks(g,x,commonSilenceTargetCallbacks(g,x,{
+  return commonTensionStageTarget(g,x,commonStanceTargetCallbacks(g,x,commonPopulationTargetCallback(g,x,commonModifierTargetCallbacks(g,x,commonPoisonTargetCallbacks(g,x,commonSilenceTargetCallbacks(g,x,{
     nextSeed:g.where(selected,nextSeed,old.nextSeed),nextPosition:g.where(selected,nextPosition,old.nextPosition),consumed:g.where(selected,g.sub(nextPosition,x.position),old.consumed),
     supported:selectBool(g,selected,coverage,old.supported),callbackSuccess:selectBool(g,selected,success,old.callbackSuccess),
     targetCount:g.where(selected,g.where(barrierSelector,barrierCount,g.where(rankSelector,defenseNextCount,coverNextCount)),old.targetCount),targets:g.where(selected,g.where(barrierSelector,barrierTargets,g.where(rankSelector,defenseTargets,coverTargets)),old.targets),
     filteredCount:g.where(selected,g.where(barrierSelector,g.where(selfMagicSelector,g.cast(selfMagicSuccess,'float32'),breathCount),g.where(rankSelector,filteredCount,coverCount)),old.filteredCount),rageCandidateUsed:g.where(selected,g.cast(g.and(rankSelector,rage),'int32'),old.rageCandidateUsed),
     partyCount:g.where(selected,partyCount,old.partyCount),affectableCount:g.where(selected,g.where(barrierSelector,g.where(selfMagicSelector,g.cast(selfMagicSuccess,'float32'),breathCount),g.where(rankSelector,filteredCount,coverCount)),old.affectableCount)
-  })))));
+  }))))));
+}
+
+// Callback140 uses the unsigned stored stage byte independently of its flags.
+// The source actor and anger history are not consulted by this original body.
+function commonTensionStageTarget(g,x,old){
+  const selected=g.eq(x.selectorIndex,140),ids=g.split(x.ids,4),present=g.split(x.present,4),candidate=g.split(x.candidate,4),dead=g.split(x.dead,4),excluded=g.split(x.excluded,4),stage=g.split(x.partyTensionStage,4),eligible=ids.map((_,i)=>g.and(present[i],candidate[i],g.not(dead[i]),g.not(excluded[i]))),partyCount=sum(g,eligible),filtered=eligible.map((gate,i)=>g.and(gate,g.not(g.eq(stage[i],0)))),count=sum(g,filtered),active=g.and(x.enabled,selected),pick=g.and(active,g.gt(count,0)),buffer=[...g.split(x.previousTargets,8)];
+  let offset=g.constant(0);for(let i=0;i<4;i++){for(let j=0;j<8;j++)buffer[j]=g.where(g.and(filtered[i],g.eq(offset,j)),ids[i],buffer[j]);offset=g.add(offset,g.cast(filtered[i],'float32'));}
+  const draw=lcg(g,x.seed),index=bounded(g,normalized(g,draw.raw),g.max(count,1)),chosen=buffer.reduce((value,id,i)=>g.where(g.eq(index,i),id,value),buffer[0]),nextSeed=g.where(pick,draw.seed,x.seed),nextPosition=g.add(x.position,g.cast(pick,'int32')),enumerated=g.and(active,g.gt(partyCount,0)),targets=g.where(enumerated,g.cat([g.where(pick,chosen,buffer[0]),...buffer.slice(1)]),x.previousTargets);
+  return{...old,nextSeed:g.where(selected,nextSeed,old.nextSeed),nextPosition:g.where(selected,nextPosition,old.nextPosition),consumed:g.where(selected,g.sub(nextPosition,x.position),old.consumed),supported:g.or(selected,old.supported),callbackSuccess:selectBool(g,selected,pick,old.callbackSuccess),targetCount:g.where(selected,g.where(enumerated,g.where(pick,1,0),x.previousTargetCount),old.targetCount),targets:g.where(selected,targets,old.targets),filteredCount:g.where(selected,count,old.filteredCount),rageCandidateUsed:g.where(selected,g.cast(g.mul(count,0),'int32'),old.rageCandidateUsed),partyCount:g.where(selected,partyCount,old.partyCount),affectableCount:g.where(selected,count,old.affectableCount)};
 }
 
 export async function buildCommonTargetCallbacks(previous){
@@ -132,6 +154,10 @@ export async function buildCommonTargetCallbacks(previous){
       19:'Eligible enemy defense<65535, defense rank<2 and no raw status bit9; one bounded draw.',138:'Eligible party MP>0 and no raw status bit9; one bounded draw.',
       72:'Use a live anger object if available, otherwise the eligible party roster. Keep current DEF!=0 and signed defense rank>-2. Empty filtering rejects without a second roster fallback. Nonempty filtering invokes the original weighted-repeat helper.',
       84:'Use the same original anger-or-party enumeration and weighted-repeat helper as72, filtering signed attack rank>-2. Unlike72, neither current attack nor defense is tested for zero. Failure does not reopen the party roster.',
+      69:'Use the original anger-or-party enumeration. Keep raw status14 bits9/20/21/22/26/27/28/29/30/31 or defend modes1/2/4/5, then use weighted repetition. Ordinary attack/defense ranks alone do not satisfy the original beneficial-state predicate.',
+      74:'Use the original anger-or-party enumeration, keeping signed magic-barrier rank6>-2 without testing current defense or resolved susceptibility; then use weighted repetition.',
+      83:'Require a typed source. A live anger object returns directly with count1 and no RNG, without checking tension or exclusion. Otherwise enumerate the party, retain raw low/high tension flags and use weighted repetition.',
+      140:'Enumerate the eligible party, retain unsigned raw stats24!=0 independently of low/high flags, and consume one bounded draw for one survivor. No source/anger predicate is used; preserve count and buffer if the original initial roster is empty.' ,
       80:'The acting enemy must exist and have HP/maxHP>=0.5. Enumerate live nonexcluded enemies in group order, omit self and already-covered signed stats+0x2c>=0, then consume one bounded draw, including one candidate.',
       81:'Apply callback80 eligibility, then keep only targets with HP/maxHP<0.5. HP0/maxHP0 is zero in the original helper; positiveHP/maxHP0 is infinity. Integer comparisons preserve the original half threshold exactly.',
       90:'Existing typed enemy source with magic-barrier rank<2 selects itself only if an eligible party actor has spell knowledge, positive MP and neither silence nor spell-reflection status. No RNG is consumed; early rejection preserves the target buffer and count.',

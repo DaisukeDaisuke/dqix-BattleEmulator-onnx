@@ -39,6 +39,6 @@ export const COMMON_ACTOR_ABI=Object.freeze({
   effectiveStats:'Effective attack, defense and agility are derived from their base values and represented buff ranks. Independently stale current-stat RAM values are not additional fields in this ABI; an ARM fixture must initialize the same derived state before comparing this boundary.',
   configuration:'coupAfterActionChance belongs to the acting party actor. The anger chance/min/max fields belong to the affected enemy. enemyAppealGate is a resolved actor property.',
   resistance:'Element IDs 1..22 map to columns 0..21; element 0 has identity resistance.',
-  tensionState:'Stage and low/high flags are independent original state and must not be reconstructed from one another.'
+  tensionState:'Stage is the raw unsigned stats24 byte, independent of low/high flags. Lowering can wrap0 to255. Damage reads it as a signed byte; represented numeric stages are0..4 and raw249..255. Other stored bytes remain explicit and return unsupported when their numeric coefficient is required, rather than being clamped.'
 });
 export const commonAuxDefault=()=>COMMON_AUX_FIELDS.map(name=>name==='angerTarget'?-1:0);

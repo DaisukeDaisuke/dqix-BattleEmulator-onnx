@@ -9,8 +9,8 @@ export function cameraWorldInitial(c){
  function complete(r){return{...r,rotation:r.rotation??r.rotationXYZ??[0,0,0],orientationAE:r.orientationAE??0,pendingFacingTarget:r.pendingFacingTarget??0,objectIndex:r.objectIndex??r.id,behaviorBE:r.behaviorBE??0};}
  return{...row,roster:row.roster.map(complete),lookupObjects:row.lookupObjects.map(complete),seed:seedBytes(BigInt(c.seed)),position:[1],cameraState:[c.counter??0,c.sample100??77,c.appliedMode??3,c.heightQ12??12345,c.angleQ12??-23456],resourceFlags04:c.resourceFlags04??0,sceneByte71c5:c.sceneByte71c5??0,programFlags3e8:c.programFlags3e8??0,enabled:true};
 }
-export async function createCameraWorldPrefixRunner({runGraph,getModel,onTrace}={}){
- let graphCalls=0;const runtime={getModel,onTrace,runGraph:async(...args)=>{graphCalls++;return runGraph(...args);}},previous=await createCameraAdmissionEventRunner(runtime),ir=await getModel('rom-camera-world-prefix1');
+export async function createCameraWorldPrefixRunner({runGraph,getModel,onTrace,admissionFactory}={}){
+ let graphCalls=0;const runtime={getModel,onTrace,admissionFactory,runGraph:async(...args)=>{graphCalls++;return runGraph(...args);}},previous=await createCameraAdmissionEventRunner(runtime),ir=await getModel('rom-camera-world-prefix1');
  async function run({rows,maxRouteAttempts=10861}={}){
   graphCalls=0;const prior=await previous.run({rows:clone(rows),maxRouteAttempts});if(!prior.complete)return{...prior,graphCalls,wholeCameraComplete:false};
   const input=[],bindings=[];

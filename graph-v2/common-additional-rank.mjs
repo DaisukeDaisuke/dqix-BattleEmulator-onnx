@@ -1,10 +1,11 @@
-// Additional2/8 share an early random draw but read their raw susceptibility
+// Additional2/8/13 share an early random draw but read raw susceptibility
 // bytes directly, independently of the resolved ailment-resistance getter.
 export const COMMON_ADDITIONAL_RANK_AUTHORITY=Object.freeze({
   attack:'JPN021e3754 / matching021e2ebc; Main0208776c/020877c0/02087838',
   defense:'JPN021e3e2c / matching021e3594; Main02087860/020878b4/0208792c',
+  magicBarrier:'JPN021e4620 / matching021e3d88; JPN02088620/02088674, matching Main02087d24/02087d78/02087df0',
   randomOrder:'Positive amount and present target, then bounded100, then raw resistance, dead flag and rank limits.',
-  rawResistanceOffsets:[0x4f,0x50]
+  rawResistanceOffsets:[0x4f,0x50,0x52]
 });
 
 export function commonAdditionalRank(g,rng,{enabled,damage,present,dead,parameter,rawResistance,critical,ignoreResistance,rank,duration,recovery,durationOnSet}){

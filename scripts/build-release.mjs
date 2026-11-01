@@ -5,6 +5,7 @@ import {resolve,dirname,join,relative,extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildGraphs} from './build-graphs.mjs';
 import {buildHtml} from './build-html.mjs';
+import {buildModelBundles} from './build-model-bundles.mjs';
 import {ENCOUNTER_DEFINITIONS,BATTLE_DEFINITIONS,makeEncounterInput} from '../data/common-battle.mjs';
 import {COMMON_PRESENTATION_EXAMPLE} from '../data/common-presentation-example.mjs';
 import {COMMON_FUNCTIONAL_FRAME_EXAMPLE} from '../data/common-functional-frame-example.mjs';
@@ -65,11 +66,10 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
     if(!found)throw Error('Required graph has not been generated '+name);
   }
   const ordered=[...models.values()].sort((a,b)=>a.name.localeCompare(b.name));
-  await mkdir(join(out,'models'),{recursive:true});await mkdir(join(out,'programs'),{recursive:true});
-  for(const model of ordered){
-    await writeFile(join(out,'models',model.name+'.onnx'),model.onnx);
-    await writeFile(join(out,'models',model.name+'.json'),JSON.stringify(model.ir)+'\n');
-  }
+  await mkdir(join(out,'programs'),{recursive:true});
+  const bundled=await buildModelBundles({out,models:ordered,commonProgram,primitiveNames:PUBLIC_MODELS});
+  await mkdir(join(out,'runtime'),{recursive:true});
+  await copyFile(join(root,'runtime/model-bundle.mjs'),join(out,'runtime/model-bundle.mjs'));
   // Keep the exact common definition unchanged in the HTML and JSON artifact.
   // Model locations are resolved by name using runtime-index.json, never by boss.
   await writeFile(join(out,'programs/common-battle.json'),JSON.stringify(commonProgram)+'\n');
@@ -79,8 +79,9 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
   await writeFile(join(out,'data/action-coverage.json'),JSON.stringify(actionCoverage,null,2)+'\n');
   const html=await buildHtml({root,out,models:ordered,commonProgram,definitions:BATTLE_DEFINITIONS,encounters,actionCoverage,cameras:CAMERA_MODES,actorFields:ACTOR_FIELDS});
   const coverage={battlePrograms:1,bossSpecificPrograms:false,commonProgramHash,encounterInputs:encounters.length,cameraModes:CAMERA_MODES.length,publicPrimitiveGraphs:PUBLIC_MODELS.length,totalGraphs:ordered.length,seedFiltering:false,learnedApproximation:false,implicitCpuFallback:false,fullGameComplete:false,authority:'Original ROM execution and matching decompile; previous emulator is an independent comparator.',limitations:['An encounter is input data, not a separately verified battle. Definition counts do not claim full action-effect or whole-game coverage.','Unsupported effects, controls and camera state are reported in the execution result rather than replaced with approximations.','Turn/transition budget exhaustion preserves the unfinished state and is never counted as a win or loss.','WASM is the default. Optional WebGPU is strict with no CPU fallback, apart from separately declared DOUBLE models executed by standalone WASM. Adapter identity and actual provider counts are reported; hardware speedup is not inferred.']};
-  const runtimeIndex={schema:'dq9-runtime-index-v2',coverage,
-    models:ordered.map(({name,sha256,public:visible,executionProvider})=>({name,sha256,public:visible,executionProvider,onnx:'models/'+name+'.onnx',ir:'models/'+name+'.json'})),
+  const runtimeIndex={schema:'dq9-runtime-index-v3',coverage,
+    models:bundled.models,bundles:bundled.bundles,
+    delivery:{format:'dq9-onnx-bundle-v1',modelDownloadRequests:bundled.modelRequests,independentOnnxModels:ordered.length,modelBytesUnchanged:true,standaloneHtmlModelRequests:0,loader:'runtime/model-bundle.mjs'},
     commonProgram:{id:'common-battle',programHash:commonProgramHash,path:'programs/common-battle.json',moduleHashes:Object.fromEntries(commonProgram.modules.map(module=>[module.name,module.sha256]))},
     definitions:'data/definitions.json',actionCoverage:'data/action-coverage.json',
     encounters:encounters.map(({id,titleJa})=>({id,titleJa,programHash:commonProgramHash,program:'common-battle'})),
@@ -88,7 +89,7 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
   await writeFile(join(out,'runtime-index.json'),JSON.stringify(runtimeIndex,null,2)+'\n');
   await copyFile(join(root,'README.md'),join(out,'README.md'));
   await copyFile(join(root,'LICENSE'),join(out,'LICENSE'));
-  const types={'.onnx':'application/octet-stream','.json':'application/json','.html':'text/html; charset=utf-8','.md':'text/markdown; charset=utf-8'};
+  const types={'.onnx':'application/octet-stream','.gz':'application/gzip','.mjs':'text/javascript; charset=utf-8','.json':'application/json','.html':'text/html; charset=utf-8','.md':'text/markdown; charset=utf-8'};
   const artifacts=[];
   for(const path of await files(out)){const bytes=await readFile(path);artifacts.push({path:relative(out,path).replaceAll('\\','/'),size_bytes:bytes.length,sha256:hash(bytes),media_type:types[extname(path)]??'text/plain; charset=utf-8'});}
   const manifest={schema:'dq9-onnx-release-v1',sourceCommit:process.env.GITHUB_SHA??'local-unpublished',coverage,html:{bytes:html.bytes,sha256:html.sha256},artifacts};

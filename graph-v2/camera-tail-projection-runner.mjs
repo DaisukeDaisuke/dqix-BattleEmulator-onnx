@@ -4,8 +4,8 @@ const clone=x=>structuredClone(x),bytes=x=>Array.from({length:4},(_,i)=>(x>>>(8*
 export const CAMERA_TAIL_PROJECTION_MODELS=[...new Set([...CAMERA_WORLD_PREFIX_MODELS,'rom-camera-tail-control','rom-camera-route-finalize16','rom-camera-facing-direction3','rom-camera-tail-object1'])];
 export function cameraTailInitial(c){const row=cameraWorldInitial(c);return{...row,cameraInitialized:!!c.cameraInitialized,advanceDelay:c.advanceDelay??0,advanceState:c.advanceState??0,roster:row.roster.map(r=>({...r,flagsC4:r.flagsC4??0})),lookupObjects:row.lookupObjects.map(r=>({...r,flagsC4:r.flagsC4??0}))};}
 function record(state,id){return state.rawActions.map(hex=>Array.from({length:52},(_,i)=>parseInt(hex.slice(i*2,i*2+2),16))).find(b=>(b[4]+256*b[5])%4096===id);}
-export async function createCameraTailProjectionRunner({runGraph,getModel,onTrace}={}){
- let graphCalls=0;const runtime={getModel,onTrace,runGraph:async(...args)=>{graphCalls++;return runGraph(...args);}},worldRunner=await createCameraWorldPrefixRunner(runtime),irs=new Map();
+export async function createCameraTailProjectionRunner({runGraph,getModel,onTrace,admissionFactory}={}){
+ let graphCalls=0;const runtime={getModel,onTrace,admissionFactory,runGraph:async(...args)=>{graphCalls++;return runGraph(...args);}},worldRunner=await createCameraWorldPrefixRunner(runtime),irs=new Map();
  for(const name of CAMERA_TAIL_PROJECTION_MODELS.slice(-4))irs.set(name,await getModel(name));
  async function call(name,rows,phase){if(!rows.length)return[];const ir=irs.get(name)??await getModel(name);for(const[lane,input]of rows.entries()){const errors=validateGraphInputs(ir.contract,input);for(const d of ir.inputs)if(!Array.isArray(input[d.name])||input[d.name].length!==d.shape[1])errors.push(`${d.name}:width`);if(errors.length)throw Error(`${name} lane${lane}: ${errors.join('; ')}`);}const out=await runtime.runGraph(name,rows,{phase});if(onTrace)await onTrace({model:name,phase,inputs:clone(rows),outputs:clone(out)});return out;}
  async function run({rows,maxRouteAttempts=10861}={}){

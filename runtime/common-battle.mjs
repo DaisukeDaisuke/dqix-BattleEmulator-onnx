@@ -233,6 +233,7 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
         enemyIds:ee.map((x,i)=>x?.actorId??192+i),enemyPresent:ee.map(exists),enemyCandidate:ee.map(member),enemyDead:ee.map(x=>!!x?.dead),enemyExcluded:ee.map(x=>!!x?.excluded),enemyGroups:ee.map(x=>x?.group??0),actorGroup:a.group,
         enemyOriginalMonsterIds:ee.map(x=>x?.originalMonsterId??-1),enemyCoverSources:ee.map(x=>x?.coverById??-1),enemyHp:ee.map(x=>value(x,'hp')),enemyMaxHp:ee.map(x=>value(x,'maxHp')),actorBarrierRank:a.rawRanks[6],actorBreathJudgment:!!(a.state3c&4),enemyBreathBarrierRank:ee.map(x=>x?.rawRanks?.[7]??0),
         partyStatusBytes:pp.flatMap(status),partyStatusKinds:pp.map(x=>x?.statusKinds??0),partyRawPoisonResistance:pp.map(x=>x?.resistances?.[15]??100),enemyStatusBytes:ee.flatMap(status),enemyStatusKinds:ee.map(x=>x?.statusKinds??0),partyFlagBytes:pp.flatMap(flags),partyRankFields:pp.flatMap(x=>x?v(x).ranks??x.rawRanks:Array(10).fill(0)),actorType400:a.actorType400!==false,actorStatusBytes:status(a),actorFlagBytes:flags(a),actorStanceRanks:a.rawRanks.slice(8,10),
+        partyDefend:pp.map(x=>value(x,'defend')),enemyDefend:ee.map(x=>value(x,'defend')),partyTensionStage:pp.map(x=>x?.tension?.[0]??0),
         enemyDefense:ee.map(x=>v(x).defense??0),enemyDefenseRank:ee.map(x=>value(x,'defenseRank')),enemyAttackRank:ee.map(x=>x?.rawRanks?.[0]??0),enemyBarrierRank:ee.map(x=>x?.rawRanks?.[6]??0),enemyGroupCount:enemies(s).reduce((count,x)=>Math.max(count,x.group+1),0),
         partyMp:pp.map(x=>value(x,'mp')),partyAuxiliaryPresent:pp.map(x=>exists(x)&&x.auxiliaryPresent!==false),partyAuxiliaryBytes:pp.flatMap(x=>x?.auxiliaryBytes??Array(9).fill(0)),enemyStatus9:ee.map(x=>!!(x?.rawStatus&0x200))};
     }
@@ -577,6 +578,7 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
       }
       for(let n=0;n<maxTurns;n++){
         if(s.camera.mode!=='numeric-only'&&s.camera.nextNumericTurnReady===false&&s.completedTurns>0)throw new Boundary('presentation-to-next-turn',{reasonDetail:'The asynchronous presentation lifecycle has not yet returned to the numerical turn boundary.'});
+        if(s.camera.mode==='functional-frame'&&s.completedTurns>0&&s.camera.frameState?.entryBoundary?.stage!=='accepted-command')throw new Boundary('functional-command-input',{reasonDetail:'The retained functional presentation requires the explicit accepted-command input boundary before another numerical turn.'});
         s.turnRecords=[];s.presentationExtraEvents=false;s.periodicPresentationRecords=[];s.periodicPresentationRequired=false;
         for(const phase of program.phases){s.phase=phase.op??phase.id??phase.name;if(boundary==='numeric-turn'&&s.phase==='presentation')break;const handler=handlers[s.phase];if(!handler)throw Error('Unknown common phase '+s.phase);await handler(s,lane);}
         if(boundary==='numeric-turn'&&s.camera.mode!=='numeric-only'){s.camera.nextNumericTurnReady=false;s.camera.complete=false;s.camera.numericTurnPending=true;}

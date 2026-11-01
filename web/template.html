@@ -15,7 +15,7 @@
 <label for="mode">戦闘の入力定義・単体検査</label><select id="mode"></select>
 <label for="preset">初期条件</label><select id="preset"></select>
 <label for="scope-mode">計算範囲</label><select id="scope-mode"><option value="numeric-only">数値遷移のみ（カメラ乱数は未適用）</option><option value="camera-projection">数値遷移と指定カメラ呼出し</option><option value="functional-frame">数値・メッセージ・カメラのフレーム実行</option><option value="input-camera">初期状態JSONのカメラ設定を実行</option></select>
-<p class="small">カメラの編成・プログラム・開始状態をJSONで指定します。フレーム実行は、空の演出スクリプトと明示した静的状態で、メッセージ待機・カメラ更新・後片付けを計算します。実装範囲外の処理は途中状態と理由を残します。</p>
+<p class="small">カメラの編成・プログラム・開始状態をJSONで指定します。フレーム実行は初回1ターンを進め、続きは保持した結果からコマンドを確定します。空の演出スクリプトと明示した静的状態で、メッセージ待機・カメラ更新・後片付けを計算します。非空スクリプトを読み込んだ場合も、未実装の処理は途中状態と理由を残します。</p>
 <label for="rom-file">フレーム実行に使うローカルROM（日本版）</label><input id="rom-file" type="file" accept=".nds,application/octet-stream">
 <p id="rom-assets-status" class="small" role="status">未読込。フレーム実行の入力例では、ROM内のメッセージと静的フォントを使います。</p>
 <p class="small">選んだファイルはこの端末で読み込みます。ROMをサーバーへ送信しません。数値のみ・指定カメラ呼出しでは選択不要です。</p>
@@ -44,7 +44,9 @@
 <p id="timings" class="small">初期化時間とウォームアップ時間は別に表示します。</p><p id="device" class="small">実行方式を選択してください。</p>
 <div class="scroll"><table><thead><tr><th>開始seed</th><th>現在seed</th><th>position</th><th>編成のHP / MP</th><th>状態・コンボ</th><th>結果</th></tr></thead><tbody id="rows"></tbody></table></div>
 <p id="result-note" class="small">全seedを保持し、先頭32件を表示します。</p><button id="download" class="secondary" disabled>全結果JSONを保存</button>
-<details><summary>保持した状態から次のコマンドを実行</summary><p class="small">フレーム処理が完了すると使用できます。指定した味方のcommandsだけを次の入力として適用し、乱数・HP/MP・状態を引き継ぎます。次の数値ターンを計算し、その演出開始前で停止します。</p><label for="next-commands-json">次のコマンドJSON</label><textarea id="next-commands-json" spellcheck="false" disabled>[]</textarea><button id="next-numeric" class="secondary" disabled>次の数値ターン</button></details>
+<label for="result-file">保存した全結果JSONを復元</label><input id="result-file" type="file" accept="application/json,.json"><p class="small">同じ共通プログラムの保存状態を読み込みます。保持した乱数・読込タスク・メッセージ・フォント・フレーム状態を引き継ぎます。ファイルはこのブラウザー内で処理します。</p>
+<details open><summary>保持した状態から続ける</summary><p class="small">次のコマンド入力を受け付ける制御状態に到達すると、コマンドを確定できます。指定した味方のcommandsを入力し、元の処理と同じコマンド位置のリセットと次の数値ターンを実行します。カメラ・メッセージ・読込タスクは保持します。メニュー操作の過程は、この明示した入力境界の外側です。</p><label for="next-commands-json">次のコマンドJSON</label><textarea id="next-commands-json" spellcheck="false" disabled>[]</textarea><button id="next-numeric" class="secondary" disabled>コマンド確定・次の数値ターン</button>
+<p class="small">数値ターンの後は、下のイベントを機能的フレーム実行への入力として指定し、演出を別に続行します。元のオーバーレイ画像・BSSの再読込とロード完了を表します。実機の読込時間を測定・推定する入力ではありません。停止後は最後に完了したフレームから再開します。</p><label for="continuation-events-json">演出開始の明示したイベントJSON</label><textarea id="continuation-events-json" spellcheck="false" disabled></textarea><label for="frame-budget">今回進めるフレーム数の上限</label><input id="frame-budget" type="number" min="1" value="256" disabled><p class="small">この数値は計算予算です。終了判定は元の状態遷移で行い、指定数への到達を演出完了には置き換えません。</p><button id="continue-presentation" class="secondary" disabled>演出を続行・再開</button></details>
 <details open><summary>未実装の効果・制御と予算到達</summary><pre id="issues">未実行</pre></details><details><summary>途中状態・行動記録</summary><pre id="trace-output">未実行</pre></details><details><summary>全出力・実行条件</summary><pre id="details">未実行</pre></details><details><summary>進行状況</summary><pre id="log">初期化待ち</pre></details>
 </section>
 </div>

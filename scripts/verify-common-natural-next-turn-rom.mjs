@@ -8,7 +8,7 @@ import {createHash} from 'node:crypto';
 import {BATTLE_DEFINITIONS,seedBytes} from '../data/common-battle.mjs';
 import {COMMON_FUNCTIONAL_FRAME_EXAMPLE} from '../data/common-functional-frame-example.mjs';
 import {extractCommonPresentationAssets} from '../runtime/common-rom-assets.mjs';
-import {createCommonFunctionalPresentationRunner} from '../runtime/common-functional-presentation.mjs';
+import {createCommonFunctionalPresentationRunner,PRESENTATION_ENTRY_BOUNDARIES} from '../runtime/common-functional-presentation.mjs';
 import {createCommonBattleRunner} from '../runtime/common-battle.mjs';
 import {createGraphExecutor} from '../web/graph-executor.mjs';
 import {loadLocalOrt} from './verify-common-battle.mjs';
@@ -43,7 +43,7 @@ export async function verifyCommonNaturalNextTurn({sourcePath,romPath,ortDirecto
       const snapshot=original.phases.find(p=>p.name==='second_numeric:original_seed_snapshot')?.continuation,restore=original.phases.find(p=>p.name==='second_numeric:original_seed_restore')?.continuation;
       if(!snapshot||!restore)throw Error('Missing original snapshot/restore '+c.id);
       const value=BigInt(hex(presented.seed));compare(c.id,'snapshot.high32',Number(value>>32n),snapshot.snapshotHigh32);compare(c.id,'snapshot.low32',Number(value&0xffffffffn),snapshot.snapshotLow32);compare(c.id,'snapshot.seedUnchanged',hex(presented.seed),snapshot.seed);compare(c.id,'restore.seed',hex(presented.seed),restore.seed);compare(c.id,'restore.position',presented.position,restore.positionFromInitial);
-      const continuation=clone(presented),party=continuation.actors.find(a=>a.actorId===0);party.commands=[...party.commands,{actionId:c.secondMenu.actionId,targets:[c.secondMenu.targetId],parameter:c.secondMenu.parameter,targetGroup:0}];
+      const prepared=await presentationRunner.prepareAcceptedCommand({state:presented,boundary:{contract:PRESENTATION_ENTRY_BOUNDARIES.acceptedCommand},runGraph:executor.runGraph,getModel:name=>models.get(name)?.ir}),continuation=prepared.state,party=continuation.actors.find(a=>a.actorId===0);party.commands=[...party.commands,{actionId:c.secondMenu.actionId,targets:[c.secondMenu.targetId],parameter:c.secondMenu.parameter,targetGroup:0}];
       const firstFrameState=JSON.stringify(continuation.camera.frameState),second=await runner.runNumericTurn({rows:[continuation],maxTransitions:100000,trace:true}),actual=second.rows[0];
       compare(c.id,'second.complete',second.complete,true);compare(c.id,'second.boundary',second.boundary,'numeric-turn');compare(c.id,'second.phase',actual.phase,'numeric-turn-complete');compare(c.id,'second.pendingPresentation',actual.camera.numericTurnPending,true);compare(c.id,'second.nextNumericTurnReady',actual.camera.nextNumericTurnReady,false);compare(c.id,'second.retainedFrameState',JSON.stringify(actual.camera.frameState),firstFrameState);endpoint(c.id+'/after-second-numeric',actual,original.secondNumericTurnFinal,input);
       const begin=second.traces[0].find(t=>t.phase==='turn-begin'&&t.model===program.operations.turnBegin)?.output,originalBegin=original.phases.find(p=>p.name==='second_numeric:turn_begin')?.continuation;

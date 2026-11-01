@@ -48,6 +48,14 @@ export const stages = [
   'graph-v2/build-common-message-controller.mjs',
   'graph-v2/build-common-presentation-scheduler.mjs',
   'graph-v2/build-common-presentation-finish.mjs',
+  'graph-v2/build-common-presentation-entry.mjs',
+  'graph-v2/build-common-resource-loader.mjs',
+  'graph-v2/build-common-animation-node.mjs',
+  'graph-v2/build-common-presentation-resource.mjs',
+  'graph-v2/build-common-presentation-narc-stack.mjs',
+  'graph-v2/build-common-presentation-stack-stores.mjs',
+  'graph-v2/build-common-presentation-program.mjs',
+  'graph-v2/build-common-message-stack.mjs',
   'graph-v2/build-common-battle.mjs',
 ];
 
