@@ -4,13 +4,14 @@ import {validateGraphInputs} from '../graph-v2/input-domains.mjs';
 import {createCommonHmrfRunner} from './common-hmrf.mjs';
 import {createCommonBCFGRunner} from './common-bcfg.mjs';
 import {inspectOriginalChrArchive} from './common-chr-data.mjs';
-import {createCommonNsbxxNameLookupRunner,COMMON_NSBXX_NAME_LOOKUP_MODELS} from './common-nsbxx-name-lookup.mjs';
+import {createCommonModelFileRunner,COMMON_MODEL_FILE_MODELS} from './common-model-file.mjs';
+import {createCommonNsbxxInitializerRunner,COMMON_NSBXX_INITIALIZE_MODELS} from './common-nsbxx-initialize.mjs';
 
 export const COMMON_ANIMATION_INSTALL_MODELS=[
  'rom-common-hmrf-allocator',
  'rom-common-animation-install','rom-common-character-registration','rom-common-character-initialize',
  'rom-common-chr-allocation','rom-common-chr-records','rom-common-bcfg','rom-common-model3d',
- ...COMMON_NSBXX_NAME_LOOKUP_MODELS,'rom-common-nsbxx-animation','rom-common-vram-allocator',
+ ...COMMON_MODEL_FILE_MODELS,...COMMON_NSBXX_INITIALIZE_MODELS,'rom-common-vram-allocator',
  'rom-common-vram-context','rom-common-texture-header','rom-common-texture-binding','rom-common-vram-staging'
 ];
 const clone=x=>structuredClone(x),scalar=(o,k)=>Number(o[k]?.[0]),pair=n=>[n%65536,Math.floor(n/65536)],word=p=>p[0]+65536*p[1],bytesOf=p=>p.flatMap(n=>[n&255,n>>>8]),same=(a,b)=>a[0]===b[0]&&a[1]===b[1];
@@ -35,7 +36,7 @@ export function createCommonAnimationInstallState(input){
 
 export async function createCommonAnimationInstallRunner({runGraph,getModel,onTrace,onAllocation}={}){
  const allocator=await createCommonHmrfRunner({runGraph,getModel,onTrace});
- const nameLookup=createCommonNsbxxNameLookupRunner({runGraph,getModel,onTrace});
+ const nsbxxInitializer=createCommonNsbxxInitializerRunner({runGraph,getModel,onTrace});
  async function call(name,input){
   const ir=await getModel(name);if(!ir)pending('Missing shared installer model '+name);
   const v={...ir.contract.defaults,...input},feeds=Object.fromEntries(ir.inputs.map(d=>[d.name,Array.isArray(v[d.name])?v[d.name]:[v[d.name]]])),errors=validateGraphInputs(ir.contract,feeds);
@@ -51,7 +52,7 @@ export async function createCommonAnimationInstallRunner({runGraph,getModel,onTr
   const slot=state.safeAllocators.find(x=>same(x.pointerU16,safeAllocatorPointerU16));
   if(!slot)throw Error('Selected SafeAllocator identity is absent from retained state');
   function locate(pointer,length){const p=word(pointer),r=state.backingRegions.find(r=>p>=word(r.baseU16)&&p+length<=word(r.baseU16)+r.bytes.length);if(!r)pending('Computed installer memory access lacks explicit backing bytes',{pointerU16:clone(pointer),length,phase});return{r,at:p-word(r.baseU16)};}
-  function read(pointer,length){const{r,at}=locate(pointer,length);return r.bytes.slice(at,at+length);}
+  function read(pointer,length,{known=false}={}){const{r,at}=locate(pointer,length);if(known&&r.knownMaskBytes.slice(at,at+length).some(x=>x!==255))pending('Original model/texture input requires known backing bytes',{pointerU16:pointer,length});return r.bytes.slice(at,at+length);}
   function write(pointer,bytes,mask,unknown){const{r,at}=locate(pointer,bytes.length);for(let i=0;i<bytes.length;i++){const m=mask?.[i]??255;r.bytes[at+i]=(r.bytes[at+i]&~m)|(bytes[i]&m);r.knownMaskBytes[at+i]=(r.knownMaskBytes[at+i]|m)&~(unknown?.[i]??0);}}
   function pointerAt(pointer,at){const{r,at:base}=locate(pointer,at+4);if(r.knownMaskBytes.slice(base+at,base+at+4).some(x=>x!==255))pending('Original linked pointer requires fully known computed bytes',{pointerU16:pointer,at});return pair(new DataView(Uint8Array.from(r.bytes.slice(base+at,base+at+4)).buffer).getUint32(0,true));}
   async function allocate(request,direct=false){
@@ -62,33 +63,9 @@ export async function createCommonAnimationInstallRunner({runGraph,getModel,onTr
    const record={phase,direct,requestBytesU16:[...request],before,...clone(result)};allocations.push(record);await onAllocation?.(record);return result;
   }
   async function chrAllocate(operation,extra={}){const request=await call('rom-common-chr-allocation',{operation,...extra});return allocate(request.requestBytesU16,!!scalar(request,'allocatorUnionCall'));}
-  async function vramCall(operation,extra={}){const r=await call('rom-common-vram-allocator',{...state.vram,operation,...extra});state.vram={...state.vram,fronts:r.nextFronts,backs:r.nextBacks,bankEnabled:r.nextBankEnabled,priority:r.nextPriority,paletteFront:scalar(r,'nextPaletteFront'),paletteBack:scalar(r,'nextPaletteBack')};return r;}
   async function contextCall(operation){const r=await call('rom-common-vram-context',{...state.vram,operation,contextBytes:state.resourceContextsBytes[allocatorIndex]});state.resourceContextsBytes[allocatorIndex]=r.nextContextBytes;state.vram={...state.vram,fronts:r.nextFronts,backs:r.nextBacks,paletteFront:scalar(r,'nextPaletteFront'),paletteBack:scalar(r,'nextPaletteBack')};return r;}
-  async function stageTexture(request){
-   const operands={subregion:scalar(request,'stagingSubregion'),sourcePointerU16:request.stagingSourceU16,byteOffset:scalar(request,'stagingByteOffset'),byteLength:scalar(request,'stagingByteLength'),...state.hardware};
-   let scanIndex=state.stagingManagerBytes[0]+256*state.stagingManagerBytes[1],scanVisited=0;if(scanIndex>255)pending('Original staging queue front is outside its256-record backing');
-   for(;;){const r=await call('rom-common-vram-staging',{...operands,operation:0,managerBytes:state.stagingManagerBytes,taskBytes:state.stagingTaskBytes[scanIndex],scanIndex,scanVisited});if(scalar(r,'taskWritten'))state.stagingTaskBytes[scanIndex]=r.nextTaskBytes;if(!scalar(r,'scanContinue'))break;scanIndex=scalar(r,'nextScanIndex');scanVisited=scalar(r,'nextScanVisited');}
-   const queueEnd=state.stagingManagerBytes[2]+256*state.stagingManagerBytes[3];if(queueEnd>255)pending('Original staging queue end is outside its256-record backing');
-   const r=await call('rom-common-vram-staging',{...operands,operation:1,managerBytes:state.stagingManagerBytes,taskBytes:state.stagingTaskBytes[queueEnd]});state.stagingManagerBytes=r.nextManagerBytes;if(scalar(r,'taskWritten'))state.stagingTaskBytes[queueEnd]=r.nextTaskBytes;return scalar(r,'integerResult')&65535;
-  }
-  async function processModel(member,modelPointer){
-   const model=member.nsbxx.model,texture=member.nsbxx.texture,texturePointer=pair(word(copyPointerU16)+member.byteOffset+member.nsbxx.textureOffset);
-   if(!model||!texture)pending('Original model requires an additional absent-model or absent-TEX producer');
-   const operands={internalModelHeaderBytes:model.headerBytes,rawFilePointerU16:pair(word(copyPointerU16)+member.byteOffset),rawFileLengthU16:pair(member.byteLength),internalModelPointerU16:pair(word(copyPointerU16)+member.byteOffset+model.byteOffset),texturePointerU16:texturePointer};
-   let modelBytes=read(modelPointer,172);
-   for(const operation of[0,1]){const r=await call('rom-common-model3d',{...operands,operation,modelBytes});modelBytes=r.nextModelBytes;write(modelPointer,modelBytes,r.writtenMaskBytes);}
-   let header=read(texturePointer,60),requests=await call('rom-common-texture-header',{operation:0,textureHeaderBytes:header,texturePointerU16:texturePointer}),keys=Array(6).fill(0);
-   for(let i=0;i<3;i++)if(requests.requestActive[i]){const r=await vramCall(i===2?3:1,{requestBytes:requests.requestBytes[i],compressed:i===1,smallPalette:!!scalar(requests,'smallPalette')});keys.splice(i*2,2,...r.returnKeyU16);}
-   const committed=await call('rom-common-texture-header',{operation:1,textureHeaderBytes:header,texturePointerU16:texturePointer,allocationKeysU16:keys});header=committed.nextTextureHeaderBytes;write(texturePointer,header,committed.writtenMaskBytes);
-   if(scalar(committed,'requestMaterialLink'))for(const internal of member.nsbxx.models)for(const[kind,pairings,resources]of[[0,internal.texturePairings,texture.textures],[1,internal.palettePairings,texture.palettes]])for(const pairing of pairings){
-    if(resources.length>15)pending('Original long NSBXX texture dictionary needs its Patricia-tree producer');
-    const match=await call('rom-common-nsbxx-name-match',{nameCount:resources.length,namesBytes:Array.from({length:240},(_,i)=>resources[Math.floor(i/16)]?.nameBytes[i%16]??0),targetBytes:pairing.nameBytes}),index=scalar(match,'index'),pointer=pair(word(copyPointerU16)+member.byteOffset+pairing.byteOffset),input={kind,resourceFound:index>=0,pairingBytes:read(pointer,4),textureKeysU16:keys,textureEntryBytes:kind===0&&index>=0?resources[index].bytes:Array(8).fill(0),paletteEntryBytes:kind===1&&index>=0?resources[index].bytes:Array(4).fill(0)},admission=await call('rom-common-texture-binding',{...input,phase:0});
-    if(scalar(admission,'bindingNeeded')){for(const index of pairing.materialIndices){const record=internal.materialRecords[index];if(!record)pending('Original material index lacks a decoded record');const p=pair(word(copyPointerU16)+member.byteOffset+record.byteOffset),r=await call('rom-common-texture-binding',{...input,phase:1,materialBytes:read(p,44)});write(p,r.nextMaterialBytes,r.materialWrittenMaskBytes);}const r=await call('rom-common-texture-binding',{...input,phase:2});write(pointer,r.nextPairingBytes);}
-   }
-   const ids=[];for(const operation of[2,3]){const r=await call('rom-common-texture-header',{operation,textureHeaderBytes:header,texturePointerU16:texturePointer});header=r.nextTextureHeaderBytes;write(texturePointer,header,r.writtenMaskBytes);ids.push(await stageTexture(r));}
-   for(const operation of[2,3]){const r=await call('rom-common-model3d',{...operands,operation,modelBytes,paletteStagingTaskId:ids[0],imageStagingTaskId:ids[1]});modelBytes=r.nextModelBytes;write(modelPointer,modelBytes,r.writtenMaskBytes);}
-   return{model,texturePointer};
-  }
+  const modelFile=createCommonModelFileRunner({getModel,runGraph,onTrace,read,write,boundary:pending});
+  async function processModel(member,modelPointerU16){return modelFile.process({state,member,rawFilePointerU16:pair(word(copyPointerU16)+member.byteOffset),modelPointerU16});}
   async function initializeCharacter(character,resourceIdU16,decoded){
    let characterBytes=(await call('rom-common-character-initialize',{characterBytes:read(character,496),resourceIdU16,safeAllocatorPointerU16})).nextCharacterBytes;write(character,characterBytes);
    let packagePointer=[0,0],referencePointer=[0,0],arrayPointer=[0,0],modelPointer=[0,0],packageBytes=Array(44).fill(0),referenceBytes=Array(8).fill(0),animationBytes=Array(64).fill(0),bcfgRecords=[],packageCreated=false;
@@ -110,14 +87,9 @@ export async function createCommonAnimationInstallRunner({runGraph,getModel,onTr
         else if(m.nsbxx?.animation){
          const slot=m.path.includes('.nsbca')?0:m.path.includes('.nsbma')?1:m.path.includes('.nsbtp')?2:m.path.includes('.nsbta')?3:-1;if(slot<0)pending('CHR animation file lacks a shared type0 slot');phase='animation-data';await records(3,{slot,rawFilePointerU16:pair(word(copyPointerU16)+m.byteOffset)});
          const a=m.nsbxx.animation,data=await chrAllocate(4,{modelHeaderBytes:metadata.model.headerBytes.slice(0,26),rawAnimationPresent:true,internalModelPresent:true,signatureInitial:a.signatureInitial});if(!data.returnedNonNull){packageCreated=false;break;}
-         const operands={signatureInitial:a.signatureInitial,signatureEnd:a.signatureEnd,modelBoneCount:metadata.model.headerBytes[23],modelMaterialCount:metadata.model.headerBytes[24],rawAnimationPointerU16:pair(word(copyPointerU16)+m.byteOffset+a.byteOffset),texturePointerU16:metadata.texturePointer};
-         // The fixed graph buffer contains only retained backing bytes. The
-         // actual allocator-produced length controls the committed slice.
-         const dataLength=word(data.requestBytesU16);if(dataLength>156)pending('AnimationData exceeds the shared64-entry buffer');
-         let bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:0,animationBytes:[...read(data.returnPointerU16,dataLength),...Array(156-dataLength).fill(0)]})).nextAnimationBytes;
-         if(a.jointTrackTargetBytes)for(const[trackIndex,targetBone]of a.jointTrackTargetBytes.entries())bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:1,trackIndex,targetBone,animationBytes:bytes})).nextAnimationBytes;
-         if(a.trackNames)for(const[trackIndex,targetBytes]of a.trackNames.entries()){const dictionary=metadata.model.materialDictionary;if(!dictionary)pending('Original animation material dictionary bytes are absent');const match=await nameLookup.lookup({dictionary,targetBytes});if(!match.complete)pending(match.pending);bytes=(await call('rom-common-nsbxx-animation',{...operands,operation:2,trackIndex,materialIndex:match.index,animationBytes:bytes})).nextAnimationBytes;}
-         write(data.returnPointerU16,bytes.slice(0,dataLength));await records(4,{slot,animationDataPointerU16:data.returnPointerU16});
+         const initialized=await nsbxxInitializer.initialize({animation:a,modelBoneCount:metadata.model.headerBytes[23],modelMaterialCount:metadata.model.headerBytes[24],rawAnimationPointerU16:pair(word(copyPointerU16)+m.byteOffset+a.byteOffset),texturePointerU16:metadata.texturePointer,materialDictionary:metadata.model.materialDictionary,animationBytes:read(data.returnPointerU16,word(data.requestBytesU16))});
+         if(!initialized.complete)pending(initialized.pending,initialized.state);
+         write(data.returnPointerU16,initialized.bytes,initialized.writtenMaskBytes);await records(4,{slot,animationDataPointerU16:data.returnPointerU16});
         }
        }
        if(packageCreated){await records(5);const p=pointerAt(packagePointer,4),valid=packageBytes[8]+256*packageBytes[9]>0;await records(7,{recordValid:valid,recordPointerU16:p,recordBytes:valid?read(p,36):Array(36).fill(0)});}

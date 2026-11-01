@@ -49,6 +49,7 @@ export const stages = [
   'graph-v2/build-common-presentation-scheduler.mjs',
   'graph-v2/build-common-presentation-finish.mjs',
   'graph-v2/build-common-presentation-entry.mjs',
+  'graph-v2/build-common-compressed-file.mjs',
   'graph-v2/build-common-resource-loader.mjs',
   'graph-v2/build-common-hmrf-allocator.mjs',
   'graph-v2/build-common-hmrf-create.mjs',

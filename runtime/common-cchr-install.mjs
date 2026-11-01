@@ -5,8 +5,9 @@ import {decodeOriginalAnimationScript} from './common-animation-data.mjs';
 import {createCommonBCFGRunner} from './common-bcfg.mjs';
 import {createCommonSafeAllocatorRunner} from './common-safe-allocator.mjs';
 import {createCommonAnimation3DDataRunner,COMMON_ANIMATION3D_DATA_MODELS} from './common-animation3d-data.mjs';
+import {createCommonModelFileRunner,COMMON_MODEL_FILE_MODELS} from './common-model-file.mjs';
 
-export const COMMON_CCHR_INSTALL_MODELS=['rom-common-cchr-records','rom-common-bcfg','rom-common-hmrf-allocator',...COMMON_ANIMATION3D_DATA_MODELS];
+export const COMMON_CCHR_INSTALL_MODELS=[...new Set(['rom-common-cchr-records','rom-common-bcfg','rom-common-hmrf-allocator',...COMMON_ANIMATION3D_DATA_MODELS,...COMMON_MODEL_FILE_MODELS])];
 const clone=x=>structuredClone(x),scalar=(o,k)=>Number(o[k]?.[0]),word=p=>p[0]+65536*p[1],pair=n=>[n%65536,Math.floor(n/65536)],pointerBytes=p=>p.flatMap(v=>[v%256,Math.floor(v/256)]);
 const requireData=(condition,message)=>{if(!condition)throw Error(message);};
 class CchrBoundary extends Error{}
@@ -41,7 +42,8 @@ export function createCommonCchrInstallRunner(options){
       async function packageStore(operation,extra={}){const result=await call({operation,packageBytes:packageBytes??Array(44).fill(0),packagePointerU16,packageId,...extra});if(packageBytes){packageBytes=[...result.nextPackageBytes];write(packagePointerU16,packageBytes,result.packageWrittenMaskBytes);}return result;}
       async function loadPackage(){
         const members=archiveMembers(archiveBytes,archivePointerU16);
-        if(members.some(m=>m.path.includes('.nsbmd')))boundary('CCHR model replacement requires the original SetModelFromFile producer');
+        const modelMember=members.find(m=>m.path.includes('.nsbmd'));
+        if(modelMember){phase='model';const request=await packageStore(10),model=await allocate(request.requestBytesU16),stored=await packageStore(11,{objectBytes:read(objectPointerU16,172),allocationPointerU16:model.returnPointerU16});write(objectPointerU16,stored.nextObjectBytes,stored.objectWrittenMaskBytes);if(scalar(stored,'allocationFailed'))return false;const loader=createCommonModelFileRunner({getModel,runGraph,onTrace,read,write,boundary});await loader.process({state,member:modelMember,rawFilePointerU16:modelMember.pointerU16,modelPointerU16:model.returnPointerU16});}
         if(members.length>80||members.some(m=>m.path.length+5>=80))boundary('The original CCHR fallback filename lookup requires its own producer');
         phase='package';const request=await packageStore(0),allocated=await allocate(request.requestBytesU16);
         if(!allocated.returnedNonNull)return false;

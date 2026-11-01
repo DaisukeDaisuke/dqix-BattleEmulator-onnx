@@ -1,6 +1,7 @@
 // Functional file I/O with original queue, pointer and allocator transitions in
 // shared ONNX. A script forgetting a handle never removes the loader's task.
 import {createCommonSafeAllocatorRunner,COMMON_SAFE_ALLOCATOR_MODELS} from './common-safe-allocator.mjs';
+import {createCommonCompressedFileRunner,COMMON_COMPRESSED_FILE_MODELS} from './common-compressed-file.mjs';
 const CAPACITY=24,clone=x=>structuredClone(x),scalar=(o,k)=>Number(o[k]?.[0]),suffix=k=>k[0].toUpperCase()+k.slice(1);
 const fields={taskIds:24,taskStatuses:24,taskTypes:24,fileLengthsU16:48,scratchFirstWords:24,scratchNumWords:24,externalAllocatorU16:48,dataPointerU16:48};
 const requireData=(condition,message)=>{if(!condition)throw Error(message);};
@@ -9,7 +10,7 @@ const pair=x=>Array.isArray(x)&&x.length===2&&x.every(v=>Number.isInteger(v)&&v>
 const filename=x=>typeof x==='string'&&x.length<24&&/^[\x01-\x7f]*$/.test(x);
 const clearedSlot=old=>({directory:old?.directory??0,outerFilename:'',innerFilename:'',bytes:null,readComplete:false});
 const copiedSlot=slot=>slot?{...slot}:null;
-export const COMMON_RESOURCE_LOADER_MODELS=['rom-common-resource-loader',...COMMON_SAFE_ALLOCATOR_MODELS];
+export const COMMON_RESOURCE_LOADER_MODELS=['rom-common-resource-loader',...COMMON_SAFE_ALLOCATOR_MODELS,...COMMON_COMPRESSED_FILE_MODELS];
 const word=p=>p[0]+65536*p[1],pointerBytes=p=>p.flatMap(v=>[v%256,Math.floor(v/256)]),words=n=>[n%65536,Math.floor(n/65536)];
 
 export function initialCommonResourceLoader(input){
@@ -24,6 +25,7 @@ export function initialCommonResourceLoader(input){
 
 export function createCommonResourceLoaderRunner({runGraph,getModel,assets,onTrace,allocators,installationState}={}){
   const allocator=createCommonSafeAllocatorRunner({runGraph,getModel,onTrace});
+  const compressed=createCommonCompressedFileRunner({runGraph,getModel,onTrace});
   function prepareMemoryWrites(memory,writes){
     const regions=memory?.backingRegions;if(!Array.isArray(regions))return null;
     const prepared=[];
@@ -80,7 +82,7 @@ export function createCommonResourceLoaderRunner({runGraph,getModel,assets,onTra
       commit(s,o);return{complete:true,removed:at>=0,removedLeadingFences:fences};
     },
     async status(s,id){const o=await call(s,3,{queryTaskId:id});requireData(!!scalar(o,'supported'),'Original loader status query needs unsupported task state');return scalar(o,'taskStatus');},
-    async process(s,{allocators:allocatorMap=allocators,installationState:memory=installationState,maxTransitions=CAPACITY+1,shouldStop=()=>false}={}){
+    async process(s,{allocators:allocatorMap=allocators,installationState:memory=installationState,maxTransitions=CAPACITY+1,maxDecoderTransitions=65536,shouldStop=()=>false}={}){
       requireData(Number.isInteger(maxTransitions)&&maxTransitions>=0,'A finite file-process transition budget is required');
       let completed=0;
       // At most24 reads can commit, followed by the actual no-eligible-read
@@ -91,11 +93,46 @@ export function createCommonResourceLoaderRunner({runGraph,getModel,assets,onTra
         if(!scalar(inspect,'supported'))return{pending:'Original loader task/allocator state is unsupported',completed};
         if(slot<0){const done=await call(s,5);requireData(!!scalar(done,'supported')&&!!scalar(done,'completed'),'Original Process suffix did not complete');commit(s,done);return{complete:true,completed,blockedByFence:!!scalar(done,'processBlockedByFence'),blockedByLock:!!scalar(done,'processBlockedByLock')};}
         const target=taskAt(s,slot);
-        if(target.type!==0)return{pending:'Original '+(target.type===1?'GP1':'GP2')+' file reader is required',completed,taskId:target.id};
+        if(target.type===2)return{pending:'Original GP2 file reader is required',completed,taskId:target.id};
         const supplied=assets?.[target.assetKey??target.outerFilename];if(supplied===undefined)return{pending:'Original resource input is unavailable: '+target.outerFilename,completed};
         const exists=supplied?.exists!==false,buffer=exists?bytes(supplied.bytes??supplied.hex??supplied):new Uint8Array(0),length=exists?(supplied.byteLength??buffer.length):0;
         requireData(Number.isSafeInteger(length)&&length>=0&&length<=262140,'Resource length exceeds the admitted original scratch domain');
         if(exists&&buffer.length!==length)return{pending:'Original resource input has not reached its declared length: '+target.outerFilename,completed};
+        if(target.type===1){
+          const description=exists?await compressed.describe(buffer):null;
+          if(description&&!description.complete)return{pending:description.pending,completed,taskId:target.id};
+          const allocationLength=description?.allocationBytes??0,external=target.externalAllocatorU16.some(Boolean);
+          let originalAllocator,computedAllocator,allocation,trial;
+          if(exists){
+            if(!Array.isArray(memory?.backingRegions))return{pending:'GP1 decoding requires its retained backing memory',completed,taskId:target.id};
+            trial=clone(memory);
+            if(external){
+              originalAllocator=allocatorMap?.[String(word(target.externalAllocatorU16))];
+              if(!originalAllocator)return{pending:'The GP1 external allocator requires its retained pointer-keyed state',completed,taskId:target.id};
+              computedAllocator=clone(originalAllocator);allocation=await allocator.allocate(computedAllocator,words(allocationLength));
+              if(!allocation.complete)return{pending:allocation.pending,completed,taskId:target.id};
+            }
+          }
+          const result=await call(s,1,{readComplete:true,fileExists:exists,readByteLengthU16:words(description?.reportedLength??0),readAllocationLengthPresent:true,readAllocationByteLengthU16:words(allocationLength),decompressionComplete:true,externalAllocationComplete:!!allocation?.complete,externalReadPointerU16:allocation?.pointerU16??[0,0]});
+          if(!scalar(result,'supported'))return{pending:'The GP1 allocation requires unsupported loader state',completed,taskId:target.id};
+          if(scalar(result,'allocationPending')){if(scalar(result,'iterationCommitted'))commit(s,result);return{pending:'Original GP1 allocation is pending',allocationPending:true,completed,taskId:target.id};}
+          let decodedBytes=null;
+          if(exists){
+            const outputPointer=result.nextDataPointerU16.slice(2*slot,2*slot+2);
+            class MemoryBoundary extends Error{}
+            const locate=(pointer,n)=>{const address=word(pointer),region=trial.backingRegions.find(r=>address>=word(r.baseU16)&&address+n<=word(r.baseU16)+r.bytes.length);if(!region)throw new MemoryBoundary('GP1 access requires actual backing bytes at '+address.toString(16));requireData(Array.isArray(region.knownMaskBytes)&&region.knownMaskBytes.length===region.bytes.length,'GP1 backing knowledge masks are required');return{region,at:address-word(region.baseU16)};};
+            const read=(pointer,n)=>{const{region,at}=locate(pointer,n);if(region.knownMaskBytes.slice(at,at+n).some(x=>x!==255))throw new MemoryBoundary('GP1 input/back-reference reaches unknown backing bytes');return region.bytes.slice(at,at+n);};
+            const write=(pointer,values)=>{const{region,at}=locate(pointer,values.length);for(let i=0;i<values.length;i++){region.bytes[at+i]=values[i];region.knownMaskBytes[at+i]=255;}};
+            try{
+              if(computedAllocator?.signedAllocatorU16.some(Boolean))for(const[offset,key]of[[0x24,'frontU16'],[0x28,'backU16'],[0x2c,'newestStateU16']])write(words(word(computedAllocator.signedAllocatorU16)+offset),pointerBytes(computedAllocator[key]));
+              const decoded=await compressed.decode({fileBytes:buffer,description,outputPointerU16:outputPointer,read,write,maxTransitions:maxDecoderTransitions});
+              if(!decoded.complete)return{pending:decoded.pending,decoderBudgetExhausted:!!decoded.budgetExhausted,completed,taskId:target.id};
+              requireData(decoded.byteLength===description.reportedLength,'Original GP1 reported length disagrees with its metadata graph');decodedBytes=read(outputPointer,decoded.byteLength);
+            }catch(error){if(error instanceof MemoryBoundary)return{pending:error.message,completed,taskId:target.id};throw error;}
+          }
+          if(trial)memory.backingRegions=trial.backingRegions;if(computedAllocator)Object.assign(originalAllocator,computedAllocator);
+          s.slots[slot]={...s.slots[slot],bytes:decodedBytes,readComplete:exists};commit(s,result);completed++;continue;
+        }
         let originalAllocator,computedAllocator,externalResult,commitMemory;
         if(exists&&target.externalAllocatorU16.some(Boolean)){
           originalAllocator=allocatorMap?.[String(word(target.externalAllocatorU16))];
