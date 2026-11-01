@@ -9,7 +9,7 @@ import {parseOriginalStaticFontTables} from './common-message-data.mjs';
 import {createCommonPresentationEntryRunner,COMMON_PRESENTATION_ENTRY_MODELS} from './common-presentation-entry.mjs';
 import {createCommonAnimationProgramBuilder,COMMON_ANIMATION_PROGRAM_MODELS} from './common-animation-program.mjs';
 import {createCommonAnimationTickRunner,COMMON_ANIMATION_TICK_MODELS} from './common-animation-tick.mjs';
-import {COMMON_ANIMATION_STATE_OFFSETS} from '../graph-v2/common-animation-fields.mjs';
+import {COMMON_ANIMATION_STATE_OFFSETS,COMMON_ANIMATION_RESET_BASE,COMMON_ANIMATION_RESET_WORDS} from '../graph-v2/common-animation-fields.mjs';
 import {createCommonAnimationActorResourceRunner,COMMON_ANIMATION_ACTOR_RESOURCE_MODELS} from './common-animation-actor-resource.mjs';
 import {COMMON_RESOURCE_LOADER_MODELS} from './common-resource-loader.mjs';
 import {inspectOriginalNarc} from './common-rom-assets.mjs';
@@ -93,7 +93,7 @@ export async function createCommonPresentationFrameRunner(options){
     await phase(s,'admission');return{complete:true,outer};
   }
   async function initializeScript(s,message,result,program){
-    const c=command(s),outer=result.result,programInitialized=s.row.loadedProgramPresent===true||s.row.selectedProgramIndex>=0;
+    const c=command(s),outer=result.result,programInitialized=s.row.loadedProgramPresent===true||s.row.selectedProgramIndex>=0,priorScript=s.scriptState;
     const initialized=await call('rom-common-presentation-admission-state',{waitFlagU16:s.waitFlagU16,eventFlagsU16:s.eventFlagsU16,scriptDelay:s.scriptDelay,feedbackSelector:s.feedbackSelector??s.input.feedbackSelector??0,tailOwnerPresent:s.tailOwnerPresent??false,secondaryReady:false,secondaryResourceIdentifier:s.input.secondaryResourceIdentifier??0,actionId:c.actionId,presentationState:s.row.presentationState,programInitialized,modeHelperExecuted:!!outer.controls?.[0]?.clearParticipantFlag4?.[0]});
     if(!bool(initialized,'supported'))return{pending:'A secondary weapon/skill resource producer is required'};
     s.waitFlagU16=[...initialized.nextWaitFlagU16];s.eventFlagsU16=[...initialized.nextEventFlagsU16];s.scriptDelay=scalar(initialized,'nextScriptDelay');s.feedbackSelector=scalar(initialized,'nextFeedbackSelector');s.tailOwnerPresent=bool(initialized,'nextTailOwnerPresent');
@@ -113,6 +113,11 @@ export async function createCommonPresentationFrameRunner(options){
       const fields=await call('rom-common-animation-initialize',{stateU16:Array(COMMON_ANIMATION_STATE_OFFSETS.length).fill(0),actionId:c.actionId,participantPresent:Array.from({length:12},(_,i)=>i<ids.length),participantCombatantPresent:value('combatant'),participantStatsPresent:value('stats'),participantStats18Low16:value('raw'),enabled:true});
       if(!bool(fields,'supported')||bool(fields,'requiresParticipantResource'))return{pending:'The original participant initializer requires its resource producer'};
       s.scriptState.scriptStateU16=[...fields.nextStateU16];s.tailOwnerPresent=bool(fields,'tailOwnerPresent');
+      const block=priorScript?.scriptResetU16??s.retainedScriptResetU16??s.input.initialResetBlockU16??Array(COMMON_ANIMATION_RESET_WORDS).fill(0),reset=await call('rom-common-animation-reset',{scriptBlockU16:block,commandPointerU16:[0,0],scriptOwnerPresent:true,enabled:true});
+      requireData(bool(reset,'supported')&&bool(reset,'handlerCompleted'),'Original initialized reset block must be computed');s.scriptState.scriptResetU16=[...reset.nextScriptBlockU16];
+      COMMON_ANIMATION_STATE_OFFSETS.forEach((at,i)=>{const slot=(at-COMMON_ANIMATION_RESET_BASE)/2;if(slot>=0&&slot<COMMON_ANIMATION_RESET_WORDS)requireData(s.scriptState.scriptResetU16[slot]===s.scriptState.scriptStateU16[i],'Original initializer aliases differ at '+at.toString(16));});
+      s.scriptState.commandPointerU16=limbs(words(s.row.commandBaseU16)[0]+40*s.row.currentActionIndex);
+      s.actorResourceStateU16=Array(8).fill(0);s.scriptTaskCount=0;s.scriptGlobalU16=[0,0];
     }
     return{complete:true};
   }

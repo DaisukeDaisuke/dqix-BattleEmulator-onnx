@@ -14,7 +14,7 @@ export function buildCommonAnimationState(){
   inputDomains:{opcode:{width:1,min:0,max:255,integer:true},stateU16:{width:offsets.length,min:0,max:65535,integer:true},payloadU16:{width:10,min:0,max:65535,integer:true},payloadMaskU16:{width:10,min:0,max:65535,integer:true}},feedback:{stateU16:'nextStateU16'}
  });
  const op=g.input('opcode'),state=g.split(g.input('stateU16',['N',offsets.length]),offsets.length),payload=g.split(g.input('payloadU16',['N',10]),10),masks=g.split(g.input('payloadMaskU16',['N',10]),10),owner=g.input('scriptOwnerPresent',['N',1],'bool'),enabled=g.input('enabled',['N',1],'bool'),is=n=>g.eq(op,n),low=(v,n)=>g.sub(v,g.mul(g.floor(g.mul(v,1/n)),n)),bit=(v,n)=>g.gt(low(g.floor(g.mul(v,1/n)),2),0),known=(i,n=65536)=>g.eq(low(masks[i],n),n-1);
- const masksKnown=g.or(is(11),g.and(g.or(is(10),is(66),is(71),is(93)),known(0)),g.and(g.or(is(58),is(64),is(80)),known(0),known(1)),g.and(is(55),known(0),known(1,4),known(2,32768)),g.and(is(118),known(0),known(1),known(2),known(3,256)));
+ const masksKnown=g.or(is(11),g.and(g.or(is(10),is(66),is(71),is(93)),known(0)),g.and(g.or(is(58),is(64),is(80)),known(0),known(1)),g.and(is(55),known(0,2),g.or(g.not(bit(payload[0],1)),known(0)),known(1,4),g.or(g.not(bit(payload[1],2)),known(2,32768))),g.and(is(118),known(0),known(1),known(2),known(3,256)));
  const supported=g.or(g.not(enabled),g.and(owner,masksKnown)),run=g.and(enabled,owner,masksKnown),updated=[...state],at=offset=>state[offsets.indexOf(offset)];
  const set=(opcode,offset,value)=>{const i=offsets.indexOf(offset);if(i<0)throw Error('Unlisted original state offset');updated[i]=g.where(g.and(run,is(opcode)),value,updated[i]);};
  set(10,0x57c,g.where(g.eq(at(0x57c),payload[0]),0,at(0x57c)));

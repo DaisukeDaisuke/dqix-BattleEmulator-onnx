@@ -30,6 +30,10 @@ function sceneProjection(state){
   if(s.actorResourceStateU16)vector(SCRIPT+0x1c8,2,s.actorResourceStateU16,(out,v)=>out.actorResourceStateU16=v);
   if(s.scriptAllocatorPointersU16)vector(SCRIPT+0x10,2,s.scriptAllocatorPointersU16,(out,v)=>out.scriptAllocatorPointersU16=v);
   if(s.scriptAllocatorIndex!==undefined)field(SCRIPT+0x30,1,s.scriptAllocatorIndex,(out,v)=>out.scriptAllocatorIndex=v);
+  const reset=s.scriptState?.scriptResetU16??s.retainedScriptResetU16;
+  if(reset)vector(SCRIPT+0x540,2,reset,(out,v)=>out.retainedScriptResetU16=v);
+  if(s.scriptTaskCount!==undefined)field(SCRIPT+0x582,2,s.scriptTaskCount,(out,v)=>out.scriptTaskCount=v);
+  if(s.scriptTaskIds)vector(SCRIPT+0x584,2,s.scriptTaskIds,(out,v)=>out.scriptTaskIds=v);
   field(SCRIPT+0x5ce,2,s.scriptDelay,(out,v)=>out.scriptDelay=v);
   field(0x5e2a,1,s.markerCount,(out,v)=>out.markerCount=v);
   field(SCRIPT+0x839,1,m.scriptEnabled,(out,v)=>out.message.scriptEnabled=v,{boolean:true});

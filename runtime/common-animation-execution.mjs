@@ -1,8 +1,8 @@
 import {validateGraphInputs} from '../graph-v2/input-domains.mjs';
-import {COMMON_ANIMATION_STATE_OFFSETS,COMMON_ANIMATION_STATE_OPCODES} from '../graph-v2/common-animation-fields.mjs';
+import {COMMON_ANIMATION_STATE_OFFSETS,COMMON_ANIMATION_STATE_OPCODES,COMMON_ANIMATION_RESET_BASE,COMMON_ANIMATION_RESET_WORDS,commonAnimationPayload} from '../graph-v2/common-animation-fields.mjs';
 
 const clone=x=>structuredClone(x),scalar=(o,k)=>Number(o[k]?.[0]);
-export const COMMON_ANIMATION_EXECUTION_MODELS=['rom-common-animation-dispatch','rom-common-animation-state'];
+export const COMMON_ANIMATION_EXECUTION_MODELS=['rom-common-animation-dispatch','rom-common-animation-state','rom-common-animation-reset'];
 
 // Only structural scheduling lives here. Opcode decisions, return handling and
 // state stores execute in shared ONNX. Resource handlers use the same explicit
@@ -35,14 +35,24 @@ export function createCommonAnimationExecutionRunner({runGraph,getModel,executeO
     if(COMMON_ANIMATION_STATE_OPCODES.includes(work.opcode)){
      const code=cursor.code;
      if(!Array.isArray(code.payloadU16)||!Array.isArray(code.payloadMaskU16))return pending(state,'Actual constructed payload bytes and written-bit masks are required',transitions);
-     const o=await call('rom-common-animation-state',{opcode:work.opcode,stateU16:state.scriptStateU16,payloadU16:code.payloadU16,payloadMaskU16:code.payloadMaskU16,scriptOwnerPresent:true,enabled:true});transitions++;
+     const o=await call('rom-common-animation-state',{opcode:work.opcode,stateU16:state.scriptStateU16,...commonAnimationPayload(code),scriptOwnerPresent:true,enabled:true});transitions++;
      if(!scalar(o,'supported')||!scalar(o,'handlerCompleted'))return pending(state,'Original opcode reads payload bits not yet produced by the constructor',transitions);
-     state.scriptStateU16=[...o.nextStateU16];state.pendingDispatch={phase:'return',handlerReturnU16:[...o.handlerReturnU16]};
+     state.scriptStateU16=[...o.nextStateU16];
+     if(state.scriptResetU16)COMMON_ANIMATION_STATE_OFFSETS.forEach((at,i)=>{const slot=(at-COMMON_ANIMATION_RESET_BASE)/2;if(slot>=0&&slot<COMMON_ANIMATION_RESET_WORDS)state.scriptResetU16[slot]=state.scriptStateU16[i];});
+     state.pendingDispatch={phase:'return',handlerReturnU16:[...o.handlerReturnU16]};
+    }else if(work.opcode===61){
+     if(!Array.isArray(state.scriptResetU16)||state.scriptResetU16.length!==COMMON_ANIMATION_RESET_WORDS||!Array.isArray(state.commandPointerU16)||state.commandPointerU16.length!==2)return pending(state,'Opcode61 requires its retained raw reset block and actual current command pointer',transitions);
+     const o=await call('rom-common-animation-reset',{scriptBlockU16:state.scriptResetU16,commandPointerU16:state.commandPointerU16,scriptOwnerPresent:true,enabled:true});transitions++;
+     if(!scalar(o,'supported')||!scalar(o,'handlerCompleted'))return pending(state,'Original reset helper did not complete',transitions);
+     state.scriptResetU16=[...o.nextScriptBlockU16];
+     COMMON_ANIMATION_STATE_OFFSETS.forEach((at,i)=>{const slot=(at-COMMON_ANIMATION_RESET_BASE)/2;if(slot>=0&&slot<COMMON_ANIMATION_RESET_WORDS)state.scriptStateU16[i]=state.scriptResetU16[slot];});
+     state.pendingDispatch={phase:'return',handlerReturnU16:[...o.handlerReturnU16]};
     }else{
      if(!executeOpcode)return pending(state,'Original animation opcode'+work.opcode+' needs its common producer',transitions,{opcode:work.opcode});
-     const result=await executeOpcode({state:clone(state),index:cursor.index,code:clone(cursor.code),continuation:clone(work.continuation??null)});
+     const result=await executeOpcode({state:clone(state),index:cursor.index,code:clone(cursor.code),continuation:clone(work.continuation??null),maxTransitions:maxTransitions-transitions,signal,shouldStop});
+     transitions+=result?.transitions??0;
      if(result?.state)state=clone(result.state);
-     if(!result?.complete){state.pendingDispatch={...work,continuation:clone(result?.continuation??work.continuation??null)};return pending(state,result?.pending??'Original opcode producer remains incomplete',transitions,{opcode:work.opcode});}
+     if(!result?.complete){state.pendingDispatch={...work,continuation:clone(result?.continuation??work.continuation??null)};return pending(state,result?.pending??'Original opcode producer remains incomplete',transitions,{opcode:work.opcode,budgetExhausted:!!result?.budgetExhausted,stopped:!!result?.stopped});}
      if(!Array.isArray(result.handlerReturnU16)||result.handlerReturnU16.length!==2)throw Error('A completed original opcode producer must supply its computed return limbs');
      state.pendingDispatch={phase:'return',handlerReturnU16:[...result.handlerReturnU16]};
     }
