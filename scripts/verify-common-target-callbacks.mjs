@@ -16,7 +16,7 @@ const ranks=value=>Array.from({length:10},(_,i)=>{const v=Number(value)>>>i*3&7;
 const status=a=>((a.status??0)|((a.hp??100)===0?1:0)|((a.hpRegen??0)?0x80000000:0)|((a.mpRegen??0)?0x40000000:0)|((a.poison??0)?2:0))>>>0;
 
 export function projectSmartTargetCase(c){
-  if(!['smart_target','summon_target'].includes(c.kind)||![13,46,47,52,53,56,72,75,79,80,81,90,114,115,116,121,122,129,147,154,159].includes(c.selector))throw Error('This initial-memory adapter supports smart_target callbacks13/46/47/52/53/56/72/75/79/80/81/90/114/115/116/121/122/129/147/154/159 only');
+  if(!['smart_target','summon_target'].includes(c.kind)||![13,46,47,52,53,56,72,75,79,80,81,84,90,114,115,116,121,122,129,147,154,159].includes(c.selector))throw Error('This initial-memory adapter supports smart_target callbacks13/46/47/52/53/56/72/75/79/80/81/84/90/114/115/116/121/122/129/147/154/159 only');
   if(!Array.isArray(c.party)||c.party.length>4||(c.enemies?.length??0)>8)throw Error('Initial roster exceeds the explicit ROM population');
   const initialOrder=c.partyOrder??[0,1,2,3],order=[...initialOrder,...[0,1,2,3].filter(id=>!initialOrder.includes(id))];
   if(order.length!==4||new Set(order).size!==4||order.some(id=>id<0||id>3))throw Error('partyOrder must contain distinct ROM party IDs');
@@ -36,7 +36,7 @@ export function projectSmartTargetCase(c){
     actorId:[sourceId],actorPresent:[sourceId<4?(actor.present??1)!==0:enemyPresent[sourceId-192]],actorType400:[sourceId>=192],actorDead:[!!(status(actor)&1)],actorExcluded:[!!(actorFlags&0x2000)],actorParalyzed:[!!(status(actor)&8)],actorBlind:[!!(status(actor)&0x40)],
     actorStatusBytes:wordBytes(status(actor)),actorFlagBytes:wordBytes(actorFlags),actorStanceRanks:ranks(actor.ranksPacked??0).slice(8,10),actorAttack:[c.sourceAttack??actor.attack??0],actorDefense:[actor.defense??0],actorGroup:[actor.group??0],actorHp:[actor.hp??100],actorMaxHp:[actor.maxHp??100],rageEnabled:[!!(actorFlags&0x1000)],rageId:[actor.angerTarget??-1],priorityEnabled:[!!c.preferRecent],revengeId:[c.lastAttacker??-1],previousId:[c.previousAttacker??-1],
     enemyIds:Array.from({length:8},(_,i)=>192+i),enemyPresent,enemyCandidate:enemies.map((_,i)=>i<roster.length),enemyDead:enemies.map(a=>!!(status(a)&1)),enemyExcluded:enemies.map(a=>!!((a.flags18??0)&0x2000)),enemyGroups:enemies.map(a=>a.group??0),enemyGroupCount:[roster.reduce((n,a)=>Math.max(n,(a.group??0)+1),0)],
-    enemyDefense:enemies.map(a=>a.defense??0),enemyDefenseRank:enemies.map(a=>ranks(a.ranksPacked??0)[1]),enemyBarrierRank:enemies.map(a=>ranks(a.ranksPacked??0)[6]),enemyStatus9:enemies.map(a=>!!(status(a)&0x200)),
+    enemyDefense:enemies.map(a=>a.defense??0),enemyDefenseRank:enemies.map(a=>ranks(a.ranksPacked??0)[1]),enemyAttackRank:enemies.map(a=>ranks(a.ranksPacked??0)[0]),enemyBarrierRank:enemies.map(a=>ranks(a.ranksPacked??0)[6]),enemyStatus9:enemies.map(a=>!!(status(a)&0x200)),
     enemyOriginalMonsterIds:enemies.map(a=>a.monsterId??1),enemyCoverSources:enemies.map(a=>a.coverById??-1),enemyHp:enemies.map(a=>a.hp??100),enemyMaxHp:enemies.map(a=>a.maxHp??100),actorBarrierRank:[ranks(actor.ranksPacked??0)[6]],actorBreathJudgment:[!!((actor.statBytes?.['0x3c']??actor.statBytes?.['60']??0)&4)],enemyBreathBarrierRank:enemies.map(a=>ranks(a.ranksPacked??0)[7]),
     previousTargetCount:[c.previousCount??3],previousTargets:c.previousTargets??Array.from({length:8},(_,i)=>70+i)
   };
