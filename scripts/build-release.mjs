@@ -9,6 +9,7 @@ import {buildModelBundles} from './build-model-bundles.mjs';
 import {ENCOUNTER_DEFINITIONS,BATTLE_DEFINITIONS,makeEncounterInput} from '../data/common-battle.mjs';
 import {COMMON_PRESENTATION_EXAMPLE} from '../data/common-presentation-example.mjs';
 import {COMMON_FUNCTIONAL_FRAME_EXAMPLE} from '../data/common-functional-frame-example.mjs';
+import {COMMON_SCRIPT_FRAME_EXAMPLE} from '../data/common-script-frame-example.mjs';
 import {CAMERA_MODES} from '../data/camera-modes.mjs';
 import {ACTOR_FIELDS} from '../graph-v2/rules.mjs';
 
@@ -52,6 +53,7 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
   const encounters=ENCOUNTER_DEFINITIONS.map(definition=>({id:definition.id,titleJa:definition.titleJa??definition.name??String(definition.id),scopeJa:definition.scopeJa??'',inputs:makeEncounterInput(definition.id)}));
   encounters.push(structuredClone(COMMON_PRESENTATION_EXAMPLE));
   encounters.push(structuredClone(COMMON_FUNCTIONAL_FRAME_EXAMPLE));
+  encounters.push(structuredClone(COMMON_SCRIPT_FRAME_EXAMPLE));
   const required=new Set([...publicNames,...CAMERA_MODES.flatMap(mode=>mode.models)]);
   for(const name of required){
     if(models.has(name))continue;

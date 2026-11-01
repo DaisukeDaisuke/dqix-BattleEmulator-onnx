@@ -112,7 +112,7 @@ export function createCommonPresentationRunner({definitions,cpuDoubleProvider='o
     const initialRow=cameraEnclosingGeometryInitial({...clone(initial),commands,row4Words:[...row4],rawActions,seed:seedHex(state.seed),currentActionIndex:0});
     initialRow.seed=[...state.seed];initialRow.position=[state.position];
     const actorMap=new Map(state.actors.map(a=>[a.actorId,a]));
-    for(const a of initialRow.roster){const numeric=actorMap.get(a.id);if(!numeric)return failed('visual-numeric-object-lookup',{objectId:a.id});a.dead=!!numeric.dead;}
+    for(const a of initialRow.roster){const numeric=actorMap.get(a.id);if(!numeric)return failed('visual-numeric-object-lookup',{objectId:a.id});a.dead=!!numeric.dead;a.stats18Low16=numeric.rawFlags%65536;a.numericStatsPresent=true;}
     // The frame runner starts here, before any enclosing-camera call. The
     // completed direct projection below is a separate explicit execution.
     camera.projectionInitial=clone(initialRow);

@@ -8,7 +8,7 @@ import {buildCommonTargetCallbacks,buildCommonAiStep} from './common-target-call
 import {ACTOR_FIELDS} from './rules.mjs';
 import {COMMON_RAW_TIMER_FIELDS,COMMON_RAW_TIMER_OFFSETS} from './common-modifier-rules.mjs';
 import {COMMON_PRESENTATION_MODELS} from '../runtime/common-presentation.mjs';
-import {COMMON_PRESENTATION_FRAME_MODELS} from '../runtime/common-presentation-frame.mjs';
+import {COMMON_PRESENTATION_FRAME_MODELS,COMMON_PRESENTATION_FRAME_INPUTS} from '../runtime/common-presentation-frame.mjs';
 const directory=new URL('./',import.meta.url),hash=b=>createHash('sha256').update(b).digest('hex');
 
 export function buildCommonRandom(){
@@ -75,7 +75,7 @@ export async function writeCommonProgram(){
     limits:{transitionBudget:'explicit input; exhaustion is unresolved',turnBudget:'explicit input; exhaustion is not a victory or loss'},
     definitions:'Input tables only. Neither the program nor runtime may switch an execution program by monster name or ID.',
     seedRepresentation:'Eight base256 float32 limbs preserve uint64 LCG exactly.',
-    presentation:{mode:'camera-projection',factory:'runtime/common-presentation.mjs',outerCalls:'Dynamic computed command queue with explicit advances; no three-command limit.',externalInput:'Correlated initial row+4 and initial visual/program/ABI state.',boundary:'Async resource/frame readiness and auxiliary event production are explicit unresolved boundaries. A projection cannot silently start the next numeric turn.',frameImplementation:{factory:'runtime/common-presentation-frame.mjs',models:COMMON_PRESENTATION_FRAME_MODELS,enabledByDefault:false,inputContract:'dq9-empty-script-static-font-functional-frame-v1',scope:'The implemented component-frame path requires explicit static font/message bytes, original stack ABI, empty resident animation scripts and qualified quiet rendering/resource state. Its actual computed UI, camera, script, scene and turn state determine progress. Physical rendering and device timing are outside this functional schedule.'}},
+    presentation:{mode:'camera-projection',factory:'runtime/common-presentation.mjs',outerCalls:'Dynamic computed command queue with explicit advances; no three-command limit.',externalInput:'Correlated initial row+4 and initial visual/program/ABI state.',boundary:'Async resource/frame readiness and auxiliary event production are explicit unresolved boundaries. A projection cannot silently start the next numeric turn.',frameImplementation:{factory:'runtime/common-presentation-frame.mjs',models:COMMON_PRESENTATION_FRAME_MODELS,enabledByDefault:false,inputContract:'dq9-script-static-font-functional-frame-v2',acceptedInputContracts:COMMON_PRESENTATION_FRAME_INPUTS,scope:'The component-frame path computes original initializer stores, linked opcode dispatch, supported state opcodes, actor-resource prechecks and mandatory quiet animation tails. Explicit original message/font bytes, stack ABI and initialized mutable state are required. The retained shared allocator map is keyed by actual pointers. Unsupported opcode, resource, feedback and active timeline producers remain explicit boundaries. Actual UI, camera, script, scene and turn state determine progress; physical rendering and hardware timing are outside this functional schedule.'}},
     completeGameClaim:false};
   await writeFile(new URL('common-battle-program.json',directory),JSON.stringify(program,null,2)+'\n');
   return {program,sha256:hash(JSON.stringify(program))};

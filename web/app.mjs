@@ -130,7 +130,7 @@ function readRequest(){
   let frameResources;
   if(current.kind==='battle'&&input.camera?.mode==='functional-frame'){
     if(limit!==1)throw Error('フレーム実行の初回は1ターンを指定してください。次のターンは保持した結果のコマンド確定と演出続行から進めます。');
-    if(input.camera.frameInput?.contract!=='dq9-empty-script-static-font-functional-frame-v1')throw Error('フレーム実行の初期入力例を選ぶか、camera.frameInputの契約と初期状態を指定してください。');
+    if(!['dq9-empty-script-static-font-functional-frame-v1','dq9-script-static-font-functional-frame-v2'].includes(input.camera.frameInput?.contract))throw Error('フレーム実行の初期入力例を選ぶか、camera.frameInputの契約と初期状態を指定してください。');
     const inline=!!input.camera.frameInput.assets?.['actmsg.nat']&&Array.isArray(input.camera.frameInput.fontTables);
     if(!inline&&!localFrameResources)throw Error('フレーム実行にはローカルROMのメッセージ・静的フォントが必要です。ROMファイルを選択してください。');
     if(!inline){frameResources=localFrameResources;input.camera.frameInput.assetManifest=structuredClone(localFrameResources.assetManifest);}

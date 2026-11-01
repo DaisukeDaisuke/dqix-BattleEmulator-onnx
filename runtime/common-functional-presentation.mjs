@@ -2,7 +2,7 @@
 // This adapter joins the proved functional component schedule; it does not
 // emulate the command menu, overlay loading or physical renderer timing.
 import {createCommonPresentationRunner} from './common-presentation.mjs';
-import {createCommonPresentationFrameRunner,computedPresentationCommands} from './common-presentation-frame.mjs';
+import {createCommonPresentationFrameRunner,computedPresentationCommands,COMMON_PRESENTATION_FRAME_INPUTS} from './common-presentation-frame.mjs';
 import {createCommonPresentationEntryRunner,PRESENTATION_ENTRY_BOUNDARIES} from './common-presentation-entry.mjs';
 const clone=x=>structuredClone(x);
 const requireData=(condition,message)=>{if(!condition)throw Error(message);};
@@ -31,7 +31,7 @@ export function createCommonFunctionalPresentationRunner({definitions,cpuDoubleP
     const prior=args.state.camera;
     const failed=(reason,details={})=>({complete:false,seed:[...args.state.seed],position:args.state.position,camera:{...clone(prior),complete:false,wholeCameraComplete:false,nextNumericTurnReady:false,unresolvedEffects:[{reason,...details}]},unresolvedEffects:[{reason,...details}]});
     if(prior.frameState)return failed('next-turn-frame-initialization',{message:'A completed functional frame is retained. The next command-input boundary and next-turn camera admission must be supplied and qualified before another presentation begins.'});
-    if(prior.frameInput?.contract!=='dq9-empty-script-static-font-functional-frame-v1')return failed('functional-frame-input',{message:'Supply camera.frameInput with the explicit initial mutable, resource, font and component schedule contract.'});
+    if(!COMMON_PRESENTATION_FRAME_INPUTS.includes(prior.frameInput?.contract))return failed('functional-frame-input',{message:'Supply camera.frameInput with the explicit initial mutable, resource, font and component schedule contract.'});
     const handoff=await produce(args);if(!handoff.complete)return handoff;
     const input={...clone(frameResources??{}),...clone(prior.frameInput),outcome:args.state.outcome};
     if(!input.assets?.['actmsg.nat']||!Array.isArray(input.fontTables))return failed('functional-frame-assets',{message:'Read the actual local ROM message and static-font bytes, or supply those bytes explicitly.'});

@@ -1,0 +1,38 @@
+import {Graph} from './graph-builder.mjs';
+import {fileURLToPath} from 'node:url';
+
+/** Original actor archive precheck, with actual external calls split at their
+ * return boundaries. The caller must supply the outputs of the shared loader,
+ * allocator and archive installer, never elapsed-time or task-count guesses. */
+export function buildCommonAnimationActorResource(){
+  const g=new Graph('rom-common-animation-actor-resource',{
+    inputContractVersion:1,
+    authority:{entry:'JPN021eb8f4 / matching021eb46c',path:'src/Combat/Overlay_25/func_ov025_021eb46c.cpp',name:'matching02072c9c'},
+    scope:'Exact script flag/state decisions and original actor-resource request selection. Stage0 dispatches the actual original caller; stage1 consumes QueueLoadFile/QueueLoadFileInGP2 return; stage2 consumes the actual12-byte SafeAllocator allocation; stage3 consumes actual CCHR/CMOT installation and linked resource append; stage4 commits the original RemoveTask return and16-byte clear. External operations remain explicit requests. No resource readiness, allocation success, animation installation or frame completion is inferred.',
+    stages:{0:'entry',1:'queue returned',2:'node allocation returned',3:'archive installation and list append returned',4:'task removal returned'},
+    resourceStateOffsets:[0x1c8,0x1ca,0x1cc,0x1ce,0x1d0,0x1d2,0x1d4,0x1d6],
+    requestPaths:{0:'data/chara_sub/s019bm.chr',1:'data/pack_lv5/chara_mp.gp2; inner mp%02d%02dbm.chr'},
+    defaults:{stage:0,scriptFlagsU16:[0,0],resourceStateU16:Array(8).fill(0),participantCount:0,firstParticipantPresent:false,sourceId:-1,partyObjectPresent:false,appearancePresent:false,appearanceNibble:0,bodyCommonPresent:false,bodyWord4U16:[0,0],weaponIndex:-1,weaponCommonPresent:false,weaponWord4U16:[0,0],allocatorPresent:false,taskStatus:0,taskStatusReturned:false,loadedFileReturned:false,loadedFilePresent:false,queueReturned:false,queuedTaskId:-1,allocationReturned:false,allocationPresent:false,globalScriptOwnerPresent:false,globalAllocatorIndex:0,installationCompleted:false,resourceAppendCompleted:false,removeReturned:false,enabled:true},
+    inputDomains:{stage:{width:1,min:0,max:4,integer:true},scriptFlagsU16:{width:2,min:0,max:65535,integer:true},resourceStateU16:{width:8,min:0,max:65535,integer:true},participantCount:{width:1,min:0,max:255,integer:true},sourceId:{width:1,min:-32768,max:65535,integer:true},appearanceNibble:{width:1,min:0,max:15,integer:true},bodyWord4U16:{width:2,min:0,max:65535,integer:true},weaponIndex:{width:1,min:-32768,max:32767,integer:true},weaponWord4U16:{width:2,min:0,max:65535,integer:true},taskStatus:{width:1,min:-1,max:1,integer:true},queuedTaskId:{width:1,min:-1,max:1023,integer:true},globalAllocatorIndex:{width:1,min:0,max:255,integer:true}},
+    feedback:{scriptFlagsU16:'nextScriptFlagsU16',resourceStateU16:'nextResourceStateU16'}
+  });
+  const stage=g.input('stage'),flags=g.split(g.input('scriptFlagsU16',['N',2]),2),state=g.split(g.input('resourceStateU16',['N',8]),8),count=g.input('participantCount'),source=g.input('sourceId'),nibble=g.input('appearanceNibble'),body=g.split(g.input('bodyWord4U16',['N',2]),2),weapon=g.split(g.input('weaponWord4U16',['N',2]),2),weaponIndex=g.input('weaponIndex'),status=g.input('taskStatus'),queued=g.input('queuedTaskId'),allocatorIndex=g.input('globalAllocatorIndex'),flag=name=>g.input(name,['N',1],'bool');
+  const participant=flag('firstParticipantPresent'),party=flag('partyObjectPresent'),appearance=flag('appearancePresent'),bodyPresent=flag('bodyCommonPresent'),weaponPresent=flag('weaponCommonPresent'),allocator=flag('allocatorPresent'),file=flag('loadedFilePresent'),statusReturned=flag('taskStatusReturned'),fileReturned=flag('loadedFileReturned'),queueReturned=flag('queueReturned'),allocationReturned=flag('allocationReturned'),allocation=flag('allocationPresent'),owner=flag('globalScriptOwnerPresent'),installed=flag('installationCompleted'),appended=flag('resourceAppendCompleted'),removed=flag('removeReturned'),enabled=flag('enabled');
+  const mod=(x,n)=>g.sub(x,g.mul(g.floor(g.mul(x,1/n)),n)),bit=g.gt(mod(g.floor(g.mul(flags[0],.5)),2),0),entry=g.eq(stage,0),initial=g.and(g.eq(state[0],0),g.eq(state[1],0)),active=g.and(enabled,bit),partySource=g.and(participant,g.ge(source,0),g.le(source,3),party),candidate=g.and(g.eq(count,1),partySource),special=g.and(appearance,g.eq(nibble,1)),nameKnown=g.and(appearance,bodyPresent,g.or(g.lt(weaponIndex,0),weaponPresent)),nameNeeded=g.and(active,entry,initial,candidate,g.not(special),g.not(nameKnown));
+  const queueRequest=g.and(active,entry,initial,candidate,g.or(special,nameKnown)),queueFinish=g.and(active,g.eq(stage,1),initial,queueReturned),queueSuccess=g.and(queueFinish,g.ge(queued,0)),queueFailed=g.and(queueFinish,g.lt(queued,0)),skipQueue=g.and(active,entry,initial,g.not(candidate)),queryStatus=g.and(active,entry,g.not(initial),g.not(statusReturned)),wait=g.and(active,entry,g.not(initial),statusReturned,g.eq(status,0)),ready=g.and(active,entry,g.not(initial),statusReturned,g.not(g.eq(status,0))),queryFile=g.and(ready,g.not(fileReturned)),canInstall=g.and(file,participant,party);
+  const allocateRequest=g.and(ready,fileReturned,canInstall),allocated=g.and(active,g.eq(stage,2),g.not(initial),allocationReturned),installationRequest=g.and(allocated,allocation,owner),installationFinish=g.and(active,g.eq(stage,3),g.not(initial),installed,appended),removeRequest=g.or(g.and(ready,fileReturned,g.not(canInstall)),g.and(allocated,g.not(allocation)),installationFinish),cleanup=g.and(active,g.eq(stage,4),g.not(initial),removed),inactive=g.and(enabled,g.not(bit));
+  const supported=g.or(g.not(enabled),g.not(g.and(allocated,allocation,g.not(owner)))),complete=g.and(supported,g.or(inactive,skipQueue,queueFinish,wait,cleanup)),clear=g.or(skipQueue,queueFailed,cleanup),next=[...state];
+  next[0]=g.where(cleanup,0,g.where(queueSuccess,1,state[0]));next[1]=g.where(cleanup,0,g.where(queueSuccess,0,state[1]));
+  // The original caller writes taskID=-1 before entering the queue helper.
+  // Keep that write even when the helper cannot return (for example, full
+  // queue -> original panic/WFI). A pending request is not a failed return.
+  for(let i=2;i<4;i++)next[i]=g.where(cleanup,0,g.where(g.or(g.and(active,entry,initial),queueFailed),65535,g.where(queueSuccess,i===2?queued:0,state[i])));
+  for(let i=4;i<8;i++)next[i]=g.where(cleanup,0,state[i]);
+  const appearanceByte=limbs=>g.add(g.floor(g.mul(limbs[0],1/4096)),g.mul(mod(limbs[1],16),16));
+  const out={supported,callCompleted:complete,returnValue:g.cast(g.or(queueSuccess,wait),'float32'),nextScriptFlagsU16:g.cat([g.where(clear,g.sub(flags[0],2),flags[0]),flags[1]]),nextResourceStateU16:g.cat(next),requestQueue:queueRequest,requestTaskStatus:queryStatus,requestLoadedFile:queryFile,requestPathKind:g.where(queueRequest,g.where(special,0,1),-1),requestTaskType:g.where(special,0,2),requestDirectory:g.where(special,8,19),requestBodyNumber:appearanceByte(body),requestWeaponNumber:g.where(g.ge(weaponIndex,0),appearanceByte(weapon),0),requestAllocatorPresent:allocator,requiresNameProducer:nameNeeded,requestAllocate12:allocateRequest,requestArchiveInstall:installationRequest,requestResourceAppend:installationRequest,requestRemoveTask:removeRequest,requestTaskIdU16:g.cat(state.slice(2,4)),requestSourceId:source,requestPackageId:g.add(allocatorIndex,4),waiting:wait,consumed:g.mul(source,0)};
+  for(const[name,value]of Object.entries(out))g.output(value,name);return g;
+}
+if(process.argv[1]===fileURLToPath(import.meta.url)){
+  const graph=buildCommonAnimationActorResource(),saved=await graph.save();
+  console.log(JSON.stringify({name:saved.name,bytes:saved.bytes,nodes:saved.nodes}));
+}

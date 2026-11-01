@@ -1,0 +1,22 @@
+import {fileURLToPath} from 'node:url';
+import {Graph} from './graph-builder.mjs';
+
+/** Exact SafeAllocator TypeA requests. All addresses stay as raw16-bit limbs. */
+export function buildCommonHmrfAllocator(){
+ const pointers=['heapBeginU16','heapEndU16','frontU16','backU16','newestStateU16','requestBytesU16'];
+ const g=new Graph('rom-common-hmrf-allocator',{
+  inputContractVersion:1,
+  authority:{matchingCommit:'e0d1df250bfc554efe2fd37513a4ad3867a77b10',sources:['src/Memory/SafeAllocator.cpp','src/NitroSDK/Memory/HMRFAllocator.cpp'],originals:{allocate:'JPN0203207c',allocateReversed:'JPN020320bc',reset:'JPN020321c0',hmrfAllocate:'JPN020b1484',blockForward:'JPN020b134c',blockBackward:'JPN020b13a8'}},
+  scope:'Original SafeAllocator with initialized TypeA/HMRF and4-byte alignment, or a null signed-allocator pointer. Uses raw32-bit unsigned pointer/length arithmetic in exact16-bit limbs, including rounding overflow and the distinct forward/reversed zero-length rules. Clear-on-allocation flags are excluded; all caller data/heap bytes therefore remain untouched by Allocate. Reset follows Free(3), clearing newestState before the backward reset. The graph does not invent a live allocation cursor: its inputs must come from explicit initial allocator state or prior computed allocation outputs. TypeB/HPXE, allocator-tree creation/destruction and resource parsing are separate producers.',
+  operations:{0:'SafeAllocator::Allocate',1:'SafeAllocator::AllocateReversed',2:'SafeAllocator::Reset'},
+  defaults:{operation:0,initialized:false,hmrfKind:true,clearFlagsLow16:0,...Object.fromEntries(pointers.map(k=>[k,[0,0]])),enabled:true},
+  inputDomains:{operation:{width:1,min:0,max:2,integer:true},clearFlagsLow16:{width:1,min:0,max:65535,integer:true},...Object.fromEntries(pointers.map(k=>[k,{width:2,min:0,max:65535,integer:true}]))},
+  feedback:{frontU16:'nextFrontU16',backU16:'nextBackU16',newestStateU16:'nextNewestStateU16'}
+ });
+ const v=Object.fromEntries(pointers.map(k=>[k,g.split(g.input(k,['N',2]),2)])),op=g.input('operation'),flags=g.input('clearFlagsLow16'),bool=k=>g.input(k,['N',1],'bool'),initialized=bool('initialized'),hmrf=bool('hmrfKind'),enabled=bool('enabled'),mod=(x,n)=>g.sub(x,g.mul(g.floor(g.mul(x,1/n)),n)),zero=[g.mul(op,0),g.mul(op,0)],constant=n=>[g.constant(n&65535),g.constant(Math.floor(n/65536))],add=(a,b)=>{const low=g.add(a[0],b[0]);return[mod(low,65536),mod(g.add(g.add(a[1],b[1]),g.floor(g.mul(low,1/65536))),65536)];},sub=(a,b)=>{const low=g.sub(a[0],b[0]);return[mod(low,65536),mod(g.add(g.sub(a[1],b[1]),g.floor(g.mul(low,1/65536))),65536)];},choose=(condition,a,b)=>a.map((x,i)=>g.where(condition,x,b[i])),nonzero=a=>g.or(g.gt(a[0],0),g.gt(a[1],0)),le=(a,b)=>g.or(g.lt(a[1],b[1]),g.and(g.eq(a[1],b[1]),g.le(a[0],b[0]))),round=a=>{const b=add(a,constant(3));return[g.sub(b[0],mod(b[0],4)),b[1]];};
+ const reset=g.eq(op,2),reverse=g.eq(op,1),clearEnabled=g.gt(mod(flags,2),0),qualified=g.or(g.not(initialized),g.and(hmrf,g.or(reset,g.not(clearEnabled)))),supported=g.or(g.not(enabled),qualified),active=g.and(enabled,qualified,initialized),incoming=choose(reverse,v.requestBytesU16,round(v.requestBytesU16)),effectiveLength=round(choose(nonzero(incoming),incoming,constant(1))),startRounded=round(v.frontU16),forwardEnd=add(startRounded,effectiveLength),backSubtracted=sub(v.backU16,effectiveLength),backStart=[g.sub(backSubtracted[0],mod(backSubtracted[0],4)),backSubtracted[1]],fits=g.where(reverse,g.cast(le(v.frontU16,backStart),'float32'),g.cast(le(forwardEnd,v.backU16),'float32')),commit=g.and(active,g.not(reset),g.gt(fits,0)),returned=choose(commit,choose(reverse,backStart,startRounded),zero),front=choose(g.and(active,reset),v.heapBeginU16,choose(g.and(commit,g.not(reverse)),forwardEnd,v.frontU16)),back=choose(g.and(active,reset),v.heapEndU16,choose(g.and(commit,reverse),backStart,v.backU16)),newest=choose(g.and(active,reset),zero,v.newestStateU16);
+ for(const[k,value]of Object.entries({supported,operationCompleted:g.and(enabled,qualified),allocationCommitted:commit,returnedNonNull:nonzero(returned),returnPointerU16:g.cat(returned),nextFrontU16:g.cat(front),nextBackU16:g.cat(back),nextNewestStateU16:g.cat(newest),effectiveLengthU16:g.cat(effectiveLength),consumed:g.mul(op,0)}))g.output(value,k);
+ return g;
+}
+
+if(process.argv[1]===fileURLToPath(import.meta.url))console.log(JSON.stringify(await buildCommonHmrfAllocator().save(),null,2));

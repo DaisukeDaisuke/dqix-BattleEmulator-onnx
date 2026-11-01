@@ -36,7 +36,7 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
     }catch(error){await route.abort();errors.push({kind:'runtime-read',message:error.message});}
   });
   const check=(name,passed,detail)=>checks.push({name,passed:!!passed,...(detail===undefined?{}:{detail})});
-  let initial,execution,chunked,warmCache,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,functional,continuation,archivePrefix,frameRestore,secondPresentation,downloaded,mobile,qaFont,cacheRelease;
+  let initial,execution,chunked,warmCache,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,functional,continuation,archivePrefix,frameRestore,secondPresentation,scriptFrame,downloaded,mobile,qaFont,cacheRelease;
   try{
     await page.goto(pathToFileURL(resolve(htmlPath)).href);await page.waitForFunction(()=>window.DQ9Release?.ready===true);
     if(fontPath){const bytes=await readFile(resolve(fontPath));qaFont={path:resolve(fontPath),sha256:hash(bytes),purpose:'Local CJK font for screenshot readability; no runtime or input changes.'};await page.addStyleTag({content:`@font-face{font-family:"Noto Sans JP";src:url(data:font/ttf;base64,${bytes.toString('base64')});font-weight:100 900}body{font-family:"Noto Sans JP",system-ui,sans-serif}textarea,pre{font-family:ui-monospace,"Noto Sans JP",monospace}`});await page.evaluate(()=>document.fonts.ready);}
@@ -233,6 +233,12 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
       });
       check('second-presentation-preserves-numeric-result-through-save-resume',secondPresentation.numericComplete&&secondPresentation.numericSeed==='939d2688e2b86ee0'&&secondPresentation.numericPosition===105&&secondPresentation.eventsEditable&&secondPresentation.stoppedFrames===160&&secondPresentation.stoppedBudget&&secondPresentation.disabledDuring&&secondPresentation.restoredExactly&&secondPresentation.numericActorsRetained&&secondPresentation.completedTurns===2,secondPresentation);
       check('public-second-presentation-matches-original-101-frame-completion',secondPresentation.programHash===initial.programHash&&secondPresentation.complete&&secondPresentation.supported&&secondPresentation.frameSummary.frames===253&&secondPresentation.frameSummary.presentationFrames===101&&secondPresentation.frameSummary.mainState===7&&secondPresentation.seed==='9f325594e786d021'&&secondPresentation.position===112&&secondPresentation.loaderTasks===1&&secondPresentation.nextReady&&!secondPresentation.numericTurnPending&&secondPresentation.commandsEnabledAfter&&secondPresentation.continueDisabledAfter,secondPresentation);
+      scriptFrame=await page.evaluate(async()=>{
+        window.DQ9Release.selectMode('common-script-frame-example');document.getElementById('seed').value='c537ff752b2c3b18';document.getElementById('batch').value='1';document.getElementById('limit').value='1';document.getElementById('frame-budget').value='300';document.getElementById('warmup').checked=false;document.getElementById('trace').checked=false;
+        const record=await window.DQ9Release.run(),row=record.result.rows[0],frame=row.camera.frameState;
+        return{programHash:record.programHash,complete:record.result.complete,supported:row.supported,contract:record.conditions.inputs[0].camera.frameInput.contract,seed:row.seed.map(b=>b.toString(16).padStart(2,'0')).reverse().join(''),frameSummary:row.camera.frameSummary,cursorIndex:frame.scriptState?.cursorIndex,scriptStateU16:frame.scriptState?.scriptStateU16,eventFlagsU16:frame.eventFlagsU16,nextReady:row.camera.nextNumericTurnReady,graphExecutionCounts:record.result.graphExecutionCounts};
+      });
+      check('public-nonempty-script-frame-matches-original-complete-state',scriptFrame.programHash===initial.programHash&&scriptFrame.complete&&scriptFrame.supported&&scriptFrame.contract==='dq9-script-static-font-functional-frame-v2'&&scriptFrame.seed==='f438be77f4b491ad'&&scriptFrame.frameSummary.frames===152&&scriptFrame.frameSummary.mainState===7&&scriptFrame.cursorIndex===null&&scriptFrame.nextReady&&JSON.stringify(scriptFrame.scriptStateU16)==='[1,30,65535,1,0,0,0,17,65535,255,0,0,0,0,0,0,12345,65432]'&&JSON.stringify(scriptFrame.eventFlagsU16)==='[0,0]'&&scriptFrame.graphExecutionCounts.ortCalls>0,scriptFrame);
     }
     if(screenshotPath)await page.screenshot({path:resolve(screenshotPath.replace(/\.png$/i,'-desktop.png')),fullPage:true});
     await page.setViewportSize({width:390,height:844});
@@ -245,7 +251,7 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
   finally{await context.close();await browser.close();}
   const result={schema:'dq9-common-html-verification-v1',passed:checks.every(item=>item.passed)&&errors.length===0,
     htmlPath:resolve(htmlPath),htmlSha256:hash(await readFile(htmlPath)),runtimeSource:ortDirectory?'existing local official distribution, intercepted at the pinned CDN URLs':'pinned CDN',
-    runtimeFiles,qaFont,initial,execution,chunked,warmCache,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,functional,continuation,archivePrefix,frameRestore,secondPresentation,downloaded,mobile,cacheRelease,checks,errors,warnings,independentRomVerification:false};
+    runtimeFiles,qaFont,initial,execution,chunked,warmCache,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,functional,continuation,archivePrefix,frameRestore,secondPresentation,scriptFrame,downloaded,mobile,cacheRelease,checks,errors,warnings,independentRomVerification:false};
   if(outputPath)await writeFile(resolve(outputPath),JSON.stringify(result,null,2)+'\n');return result;
 }
 

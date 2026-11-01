@@ -1,0 +1,25 @@
+import {Graph} from './graph-builder.mjs';
+
+// The opcode loop sits between two real producer boundaries. In particular,
+// resource checks must not be repeated after an opcode has queued a resource.
+export function buildCommonAnimationTick(){
+ const g=new Graph('rom-common-animation-tick',{
+  inputContractVersion:1,
+  authority:{path:'src/Combat/Overlay_25/func_ov025_021e9778.cpp',sha256:'9467787abf897a1f9f8283779dbd6ee6e710c0340c1eeffb7092ae937866b110',jpn:'021e9c0c..021e9f0c',actorResource:'021eb8f4',resourceJobs:'021eb68c',feedback:'021e9fc0',timeline:'021ec018',tailOwner:'021e9f28'},
+  scope:'Phase0 admits the original opcode loop after the separately executed delay and actor-resource producer. Actual resource-job bytes must be quiet. Phase1 executes the mandatory quiet feedback/timeline/tail after an actually completed loop, even when its cursor remains present. The phase1 resource flags are not rechecked. Active feedback, timeline, sound or extra-effect producers remain explicit unsupported boundaries. All event stores and original early returns are computed; cursor exhaustion alone never establishes a complete frame.',
+  defaults:{phase:0,scriptBaseU16:[0x224,0x237],scriptOwnerGlobalU16:[0,0],scriptEnabled:false,delayReturned:false,actorResourcePrecheckComplete:false,actorResourceReturned:false,scriptFlagsLow:0,resourceStates:[0,0,0,0],feedbackSelector:255,feedbackCount:0,timelinePointersPresent:Array(12).fill(false),timelineExtraByte:0,tailOwnerU16:[0,0],actionRecordPresent:false,actionCategory:0,eventFlagsU16:[0,0],loopReachedTail:false,enabled:true},
+  inputDomains:{phase:{width:1,min:0,max:1,integer:true},scriptBaseU16:{width:2,min:0,max:65535,integer:true},scriptOwnerGlobalU16:{width:2,min:0,max:65535,integer:true},scriptFlagsLow:{width:1,min:0,max:65535,integer:true},resourceStates:{width:4,min:0,max:255,integer:true},feedbackSelector:{width:1,min:0,max:65535,integer:true},feedbackCount:{width:1,min:0,max:255,integer:true},timelineExtraByte:{width:1,min:0,max:255,integer:true},tailOwnerU16:{width:2,min:0,max:65535,integer:true},actionCategory:{width:1,min:0,max:15,integer:true},eventFlagsU16:{width:2,min:0,max:65535,integer:true}},
+  phases:{0:'after actual delay and actor-resource precheck',1:'after actual opcode-loop tail boundary'}
+ });
+ const phase=g.input('phase'),script=g.input('scriptBaseU16',['N',2]),owner=g.input('scriptOwnerGlobalU16',['N',2]),flags=g.input('scriptFlagsLow'),resource=g.split(g.input('resourceStates',['N',4]),4),selector=g.input('feedbackSelector'),count=g.input('feedbackCount'),timeline=g.split(g.input('timelinePointersPresent',['N',12],'bool'),12),extra=g.input('timelineExtraByte'),tailOwner=g.split(g.input('tailOwnerU16',['N',2]),2),category=g.input('actionCategory'),event=g.split(g.input('eventFlagsU16',['N',2]),2),b={};
+ for(const key of['scriptEnabled','delayReturned','actorResourcePrecheckComplete','actorResourceReturned','actionRecordPresent','loopReachedTail','enabled'])b[key]=g.input(key,['N',1],'bool');
+ const bit=(x,n)=>g.gt(g.sub(g.floor(g.mul(x,1/n)),g.mul(g.floor(g.mul(x,1/(2*n))),2)),0),before=g.and(b.enabled,g.eq(phase,0)),after=g.and(b.enabled,g.eq(phase,1)),body=g.and(b.scriptEnabled,g.not(b.delayReturned)),tailPresent=g.or(g.gt(tailOwner[0],0),g.gt(tailOwner[1],0)),resourcesQuiet=g.and(g.not(bit(flags,2)),...resource.map(x=>g.eq(x,0)));
+ const prefixSupported=g.or(g.not(body),g.and(b.actorResourcePrecheckComplete,g.or(b.actorResourceReturned,resourcesQuiet))),requestLoop=g.and(before,body,prefixSupported,g.not(b.actorResourceReturned));
+ const feedbackQuiet=g.and(g.not(bit(event[0],8)),g.not(bit(flags,16)),g.or(g.ge(selector,255),g.eq(count,0))),timelineQuiet=g.and(...timeline.map(x=>g.not(x)),g.eq(extra,0)),tailQuiet=g.and(g.or(g.not(tailPresent),g.and(g.not(bit(event[0],1)),g.not(bit(event[0],2)))),g.or(g.not(b.actionRecordPresent),g.not(g.eq(category,2)),g.not(bit(event[0],512)),bit(event[0],1024)));
+ const tailSupported=g.and(b.loopReachedTail,feedbackQuiet,timelineQuiet,tailQuiet),tailExecuted=g.and(after,tailSupported),clear=g.sub(g.sub(event[0],g.mul(g.cast(bit(event[0],4),'float32'),4)),g.mul(g.cast(bit(event[0],8),'float32'),8));
+ g.output(g.and(g.or(g.not(before),prefixSupported),g.or(g.not(after),tailSupported)),'supported');
+ g.output(requestLoop,'requestLoop');g.output(g.and(before,prefixSupported,g.not(requestLoop)),'returnedBeforeLoop');g.output(tailExecuted,'tailExecuted');g.output(tailPresent,'tailOwnerPresent');
+ g.output(g.where(before,script,owner),'nextScriptOwnerGlobalU16');g.output(g.cat([g.where(tailExecuted,clear,event[0]),event[1]]),'nextEventFlagsU16');
+ g.output(g.and(before,body,g.not(b.actorResourcePrecheckComplete)),'requiresActorResourcePrecheck');g.output(g.and(before,body,b.actorResourcePrecheckComplete,g.not(b.actorResourceReturned),g.not(resourcesQuiet)),'requiresResourceJobs');
+ g.output(g.and(after,b.loopReachedTail,g.not(feedbackQuiet)),'requiresFeedback');g.output(g.and(after,b.loopReachedTail,g.not(timelineQuiet)),'requiresTimeline');g.output(g.and(after,b.loopReachedTail,g.not(tailQuiet)),'requiresTailEffect');return g;
+}
