@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+// Development-only extraction of selector data. No drawing assets are emitted.
+import {open,readFile,writeFile,mkdir} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
+import {createHash} from 'node:crypto';
+import {inspectOriginalNarc,decompressOriginalArchiveBlock,originalFilenameCRC32} from '../runtime/common-rom-assets.mjs';
+import {MONSTER_DEFINITIONS} from '../data/common-battle.mjs';
+import {cameraProgramMetadata} from './camera-program-metadata.mjs';
+
+const args=process.argv.slice(2),option=k=>{const i=args.indexOf(k);return i<0?undefined:args[i+1];},hash=b=>createHash('sha256').update(b).digest('hex');
+if(!option('--rom')||!option('--out'))throw Error('Development use: --rom original.nds --out data/common-camera-actor-program-data.mjs [--proof-input request.json]');
+const rom=await open(option('--rom'),'r');
+async function read(at,length){const b=Buffer.alloc(length),r=await rom.read(b,0,length,at);if(r.bytesRead!==length)throw Error('Short original read');return b;}
+try{
+ const romSHA256=hash(await readFile(option('--rom')));if(romSHA256!=='b7a7f82f9da6f5bd08b5ae436d67cbde020f15e79534e0d34853201cd24d775d')throw Error('Original ROM identity differs');
+ const header=await read(0,512),fnt=await read(header.readUInt32LE(64),header.readUInt32LE(68)),fat=await read(header.readUInt32LE(72),header.readUInt32LE(76)),files=[];
+ function visit(id,prefix){let at=fnt.readUInt32LE(id*8),index=fnt.readUInt16LE(id*8+4);while(fnt[at]){const flags=fnt[at++],n=flags&127,name=fnt.toString('ascii',at,at+n);at+=n;if(flags&128){const child=fnt.readUInt16LE(at)&4095;at+=2;visit(child,prefix+name+'/');}else{files.push({path:prefix+name,start:fat.readUInt32LE(index*8),end:fat.readUInt32LE(index*8+4)});index++;}}}visit(0,'');
+ async function file(path){const f=files.find(f=>f.path===path);if(!f)throw Error('Missing original file '+path);return read(f.start,f.end-f.start);}
+ const entries=[],cases=[],archives=[];
+ function add(bytes,origin){
+  // Original FindFilesInNarcBySubstring(...,".bact",...,1) enumerates from
+  // file index zero and returns the first match. The final1 is maxOut, not a
+  // starting index. Internal script names need not equal the archive key.
+  const members=inspectOriginalNarc(bytes).members,selected=members.find(m=>m.path.includes('.bact'));if(!selected)return;
+  const id=origin.archive+'/'+(origin.entryCRC===undefined?'':String(origin.entryCRC)+'/')+selected.path,sha256=hash(selected.bytes);
+  entries.push({id,...origin,containerSHA256:hash(bytes),member:selected.path,memberIndex:members.indexOf(selected),sha256,byteLength:selected.bytes.length,...cameraProgramMetadata(selected.bytes)});
+  cases.push({id,sha256,bytesHex:Buffer.from(selected.bytes).toString('hex')});
+ }
+ for(const path of ['data/pack_lv5/enemy.gp2','data/pack_lv5/chara_mp.gp2']){
+  const bytes=await file(path),count=bytes.readUInt16LE(4)&4095,info=Buffer.from(decompressOriginalArchiveBlock(bytes.subarray(bytes.readUInt16LE(6)*4,bytes.readUInt16LE(8)*4))),base=bytes.readUInt16LE(10)*4,uncompressed=!!(bytes.readUInt32LE(16)&0x10000000);
+  if(info.length<count*12)throw Error('Truncated original directory');archives.push({path,sha256:hash(bytes),byteLength:bytes.length,entryCount:count});
+  for(let index=0;index<count;index++){const at=index*12,entryCRC=info.readUInt32LE(at),start=base+(info.readUInt32LE(at+4)&0xffffff)*4,length=info.readUInt32LE(at+8)&0xffffff;if(start<base||start+length>bytes.length)throw Error('Original entry outside archive');const packed=bytes.subarray(start,start+length),data=uncompressed?packed:Buffer.from(decompressOriginalArchiveBlock(packed));add(data,{archive:path,entryIndex:index,entryCRC});}
+ }
+ for(const f of files.filter(f=>/^data\/(chara|chara_sub|enemy)\//.test(f.path)&&f.path.endsWith('.chr')))add(await read(f.start,f.end-f.start),{archive:f.path});
+ const monsterModels=[...new Set(Object.values(MONSTER_DEFINITIONS).map(m=>m.model))].sort().map(model=>{const filename=model+'.mon',entry=entries.find(e=>e.archive==='data/pack_lv5/enemy.gp2'&&e.entryCRC===originalFilenameCRC32(filename));if(!entry)throw Error('Missing monster program '+model);return{model,filename,entryId:entry.id};});
+ const partyPrograms=entries.filter(e=>e.archive==='data/pack_lv5/chara_mp.gp2').map(e=>{const filename=e.member.replace(/\.bact$/,'b.chr');if(originalFilenameCRC32(filename)!==e.entryCRC)throw Error('Unresolved party program filename '+e.member);return{filename,entryId:e.id};});
+ const data={schema:'dq9-common-camera-actor-program-data-v1',romSHA256,matchingCommit:'e0d1df250bfc554efe2fd37513a4ad3867a77b10',scope:'Static initial resident action memberships and selector-relevant nodes only. No model, animation, rendering or observed battle state. First .bact in original file order is preserved, including internal-name aliases.',relevantOpcodes:[7,12,32,34,61],archives,monsterModels,partyPrograms,entries};
+ const text='// Generated by scripts/extract-camera-actor-program-data.mjs from original definition data.\nexport const COMMON_CAMERA_ACTOR_PROGRAM_DATA='+JSON.stringify(data)+';\n';
+ await mkdir(dirname(resolve(option('--out'))),{recursive:true});await writeFile(option('--out'),text);
+ if(option('--proof-input'))await writeFile(option('--proof-input'),JSON.stringify({schema:'dq9-camera-program-metadata-original-input-v1',initialInputsOnly:true,romSHA256,cases})+'\n');
+ console.log(JSON.stringify({files:cases.length,programs:entries.reduce((n,e)=>n+e.programs.length,0),monsterModels:monsterModels.length,partyPrograms:partyPrograms.length,bytes:Buffer.byteLength(text),sha256:hash(text)}));
+}finally{await rom.close();}

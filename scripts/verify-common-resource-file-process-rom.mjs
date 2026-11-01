@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import {readFile,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
 import {buildCommonResourceLoader} from '../graph-v2/build-common-resource-loader.mjs';
 import {buildCommonHmrfCreate} from '../graph-v2/build-common-hmrf-create.mjs';
 import {buildCommonHmrfAllocator} from '../graph-v2/build-common-hmrf-allocator.mjs';
 import {buildCommonCompressedFile,buildCommonDecompressionStep} from '../graph-v2/build-common-compressed-file.mjs';
+import {buildCommonFilenameCRC,buildCommonGpcArchive,buildCommonGpcSearch} from '../graph-v2/build-common-gpc-archive.mjs';
 import {createCommonHmrfRunner} from '../runtime/common-hmrf.mjs';
 import {createCommonResourceLoaderRunner,initialCommonResourceLoader} from '../runtime/common-resource-loader.mjs';
 import {createGraphExecutor} from '../web/graph-executor.mjs';
@@ -12,8 +14,8 @@ import {loadLocalOrt} from './verify-common-battle.mjs';
 
 const args=process.argv.slice(2),option=k=>{const i=args.indexOf(k);return i<0?undefined:args[i+1];},hash=x=>createHash('sha256').update(x).digest('hex'),pair=n=>[n%65536,Math.floor(n/65536)],word=p=>p[0]+65536*p[1],clone=x=>structuredClone(x);
 if(!option('--source')||!option('--ort-dir')||!option('--out'))throw Error('Use --source original-process.json --ort-dir DIR --out FILE');
-const raw=await readFile(option('--source')),source=JSON.parse(raw);if(!source.executionComplete||!source.programUnmodified||source.romSHA256!=='b7a7f82f9da6f5bd08b5ae436d67cbde020f15e79534e0d34853201cd24d775d')throw Error('Complete unmodified original ROM evidence is required');
-const models=new Map();for(const build of[buildCommonResourceLoader,buildCommonHmrfCreate,buildCommonHmrfAllocator,buildCommonCompressedFile,buildCommonDecompressionStep]){const g=build();models.set(g.name,{name:g.name,onnx:g.model(),ir:g.json()});}
+const supplied=await readFile(option('--source')),raw=option('--source').endsWith('.gz')?gunzipSync(supplied):supplied,source=JSON.parse(raw);if(!source.executionComplete||!source.programUnmodified||source.romSHA256!=='b7a7f82f9da6f5bd08b5ae436d67cbde020f15e79534e0d34853201cd24d775d')throw Error('Complete unmodified original ROM evidence is required');
+const models=new Map();for(const build of[buildCommonResourceLoader,buildCommonHmrfCreate,buildCommonHmrfAllocator,buildCommonCompressedFile,buildCommonDecompressionStep,buildCommonFilenameCRC,buildCommonGpcArchive,buildCommonGpcSearch]){const g=build();models.set(g.name,{name:g.name,onnx:g.model(),ir:g.json()});}
 const ort=await loadLocalOrt(option('--ort-dir')),executor=createGraphExecutor({models,ortRuntime:ort}),runtime={runGraph:executor.runGraph,getModel:name=>models.get(name)?.ir},creator=await createCommonHmrfRunner(runtime);
 const fields=['taskIds','taskStatuses','taskTypes','fileLengthsU16','scratchFirstWords','scratchNumWords'],allocatorFields=['heapBeginU16','heapEndU16','frontU16','backU16','newestStateU16'];
 const report={schema:'dq9-common-resource-file-process-rom-verification-v1',sourceSHA256:hash(raw),models:Object.fromEntries([...models].map(([name,m])=>[name,hash(m.onnx)])),fieldsCompared:0,mismatches:0,examples:[],cases:[],jsonResumes:0,unknownInitialAllocatorTreeBytesExcluded:0,scope:'Whole original background Process with actual memory filesystem and SafeAllocator instructions. Initial HMRF cursors are computed by the creation graph from the initial region, not copied from observed allocations. Compare every represented loader field, raw task pointer/name, allocation order/cursors and every known heap/scratch byte, including unchanged bytes. The20 global allocator-tree header bytes outside the layout graph are explicitly unknown; original file-process instructions are unchanged. Run whole and JSON-restored single-iteration modes without reallocation.'};
@@ -33,7 +35,7 @@ try{for(const row of source.results){
  const c=row.case;if(!row.ok||!row.strictInitializedMemory||!row.completeFunctionExecuted||c.operation!=='process')throw Error('Strict whole Process evidence required '+c.id);
  for(const resumed of[false,true]){
   const id=c.id+(resumed?'/json':'/whole'),before=report.mismatches,allocations=[];let current=await initial(c);
-  const runner=createCommonResourceLoaderRunner({...runtime,assets:{'actmsg.nat':{hex:c.memoryReadHex},'missing.nat':{exists:false}},onTrace:({model,inputs,outputs})=>{if(model==='rom-common-hmrf-allocator')allocations.push({input:clone(inputs[0]),output:clone(outputs[0])});}});
+  const runner=createCommonResourceLoaderRunner({...runtime,assets:{'actmsg.nat':{hex:c.memoryReadHex},'missing.nat':{exists:false}},onTrace:({model,inputs,outputs})=>{if(model==='rom-common-hmrf-allocator'&&inputs[0].operation[0]===0)allocations.push({input:clone(inputs[0]),output:clone(outputs[0])});}});
   let result;for(let step=0;step<26;step++){result=await runner.process(current.loader,{...current,maxTransitions:resumed?1:25});if(result.complete||!result.budgetExhausted)break;current=JSON.parse(JSON.stringify(current));report.jsonResumes++;}
   compare(id,'complete',result.complete,true);if(!result.complete){report.cases.push({id,pending:result.pending});continue;}
   for(const[k,expected]of Object.entries(row.loaderState))compare(id,'loader.'+k,current.loader[k],expected);

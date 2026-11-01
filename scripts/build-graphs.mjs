@@ -40,6 +40,8 @@ export const stages = [
   'graph-v2/build-common-blade-recoil.mjs',
   'graph-v2/build-common-population.mjs',
   'graph-v2/build-common-presentation.mjs',
+  'graph-v2/build-common-presentation-program.mjs',
+  'graph-v2/build-common-presentation-resource.mjs',
   'graph-v2/build-common-camera-command.mjs',
   'graph-v2/build-common-camera-turn.mjs',
   'graph-v2/build-common-battle.mjs',

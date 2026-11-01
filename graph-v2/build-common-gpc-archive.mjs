@@ -1,0 +1,54 @@
+import {fileURLToPath} from 'node:url';
+import {Graph} from './graph-builder.mjs';
+
+const authority={matchingCommit:'e0d1df250bfc554efe2fd37513a4ad3867a77b10',sources:['src/Filesystem/GPC.cpp','src/Filesystem/Overlay_33/Ov33BackgroundLoader.cpp','src/System/itcm/func_01ff85b8.cpp','src/Combat/Main/data_020e6710.cpp'],originals:{filenameCRC:'JPN01ff860c',gpcStaticInitializer:'JPN020e6ff0',headerLoad:'JPN020dabe8',search:'JPN020daa28'}};
+const bytesDomain=width=>({width,min:0,max:255,integer:true}),limbsDomain={width:2,min:0,max:65535,integer:true};
+function math(g){const mod=(x,n)=>g.sub(x,g.mul(g.floor(g.mul(x,1/n)),n)),add=(p,n)=>{const low=g.add(p[0],n);return[mod(low,65536),mod(g.add(p[1],g.floor(g.mul(low,1/65536))),65536)];};return{mod,add,half:(b,i)=>g.add(b[i],g.mul(b[i+1],256))};}
+
+export function buildCommonFilenameCRC(){
+ const g=new Graph('rom-common-filename-crc',{
+  inputContractVersion:1,authority,
+  scope:'Original null-terminated filename CRC32 for the24-byte loader name field. All256 polynomial lookup weights match the original JPN table SHA25612f3e0576d447eb37b36d82ba0c1c5481b8f0d12fdc70347ce4a076b229d4c86. Byte XOR and32-bit shifts use exact16-bit limbs. A missing terminator is not silently truncated. Null pointer returns0, matching the original function.',
+  defaults:{nameBytes:Array(24).fill(0),pointerPresent:true,enabled:true},inputDomains:{nameBytes:bytesDomain(24)}
+ });
+ const {mod}=math(g),name=g.split(g.input('nameBytes',['N',24]),24),present=g.input('pointerPresent',['N',1],'bool'),enabled=g.input('enabled',['N',1],'bool');
+ // Four-bit XOR is an exact256-entry truth table. Its bounded integer indices
+ // and power-of-two limb carries avoid hundreds of per-bit scalar operators.
+ const xorTable=g.constant(Array.from({length:256},(_,i)=>(i>>>4)^(i&15)),'float32',[256]);
+ const xor=(a,b,bits)=>{let v=g.constant(0);for(let i=0;i<bits;i+=4){const x=mod(g.floor(g.mul(a,2**-i)),16),y=mod(g.floor(g.mul(b,2**-i)),16),index=g.cast(g.add(g.mul(x,16),y),'int32'),n=g.op('Gather',[xorTable,index],{axis:0},{shape:['N',1]});v=g.add(v,g.mul(n,2**i));}return v;};
+ const table=Array.from({length:256},(_,i)=>{let c=i;for(let bit=0;bit<8;bit++)c=(c>>>1)^((c&1)?0xedb88320:0);return c>>>0;}),lowTable=g.constant(table.map(x=>x%65536),'float32',[256]),highTable=g.constant(table.map(x=>Math.floor(x/65536)),'float32',[256]);
+ let low=g.constant(65535),high=g.constant(65535),live=present;
+ for(const byte of name){live=g.and(live,g.gt(byte,0));const index=g.cast(xor(mod(low,256),byte,8),'int32'),tl=g.op('Gather',[lowTable,index],{axis:0},{shape:['N',1]}),th=g.op('Gather',[highTable,index],{axis:0},{shape:['N',1]}),shiftLow=g.add(g.floor(g.mul(low,1/256)),g.mul(mod(high,256),256)),shiftHigh=g.floor(g.mul(high,1/256));low=g.where(live,xor(shiftLow,tl,16),low);high=g.where(live,xor(shiftHigh,th,16),high);}
+ g.output(g.or(g.not(enabled),g.not(live)),'supported');g.output(g.cat([g.sub(65535,low),g.sub(65535,high)]),'crcU16');g.output(g.mul(low,0),'consumed');return g;
+}
+
+export function buildCommonGpcArchive(){
+ const g=new Graph('rom-common-gpc-archive',{
+  inputContractVersion:1,authority,
+  scope:'Original GPC2 header/index allocation and entry fields. The header/index lives right-aligned in remaining scratch, with its original extra4 bytes and original headerLength/fileInfoLength stores. The index stream starts after the actual20-byte read, not a guessed archive offset. File entry offsets and lengths use exact16-bit limbs. Decoding is delegated to the shared original compressed-file graphs. Header truncation, malformed index extents and buffers outside the bounded loader domain stay explicit boundaries.',
+  defaults:{operation:0,headerBytes:Array(20).fill(0),entryBytes:Array(12).fill(0),fileByteLength:0,scratchBaseU16:[0,0],scratchBytes:0,rightmostAllocationByte:0,scratchRightArenaUsage:0,enabled:true},
+  inputDomains:{operation:{width:1,min:0,max:1,integer:true},headerBytes:bytesDomain(20),entryBytes:bytesDomain(12),fileByteLength:{width:1,min:0,max:262140,integer:true},scratchBaseU16:limbsDomain,...Object.fromEntries(['scratchBytes','rightmostAllocationByte','scratchRightArenaUsage'].map(k=>[k,{width:1,min:0,max:262140,integer:true}]))}
+ });
+ const {mod,add,half}=math(g),op=g.input('operation'),header=g.split(g.input('headerBytes',['N',20]),20),entry=g.split(g.input('entryBytes',['N',12]),12),fileBytes=g.input('fileByteLength'),base=g.split(g.input('scratchBaseU16',['N',2]),2),scratch=g.input('scratchBytes'),rightmost=g.input('rightmostAllocationByte'),right=g.input('scratchRightArenaUsage'),enabled=g.input('enabled',['N',1],'bool');
+ const signature=g.and(...[71,80,67,50].map((v,i)=>g.eq(header[i],v))),headerLength=half(header,6),fileInfoLength=half(header,8),firstFile=half(header,10),decodedInfo=half(header,12),headerTotal=g.mul(g.add(headerLength,decodedInfo),4),headerAllocation=g.add(headerTotal,4),capacity=g.sub(g.sub(scratch,rightmost),right),headerEnd=add(base,g.sub(scratch,right)),alignedEnd=[g.sub(headerEnd[0],mod(headerEnd[0],4)),headerEnd[1]],output=add(alignedEnd,g.sub(0,headerAllocation)),indexOutput=add(output,20),indexEncodedLength=g.sub(g.mul(fileInfoLength,4),20),indexCapacity=g.sub(headerAllocation,20);
+ const fits=g.and(g.ge(capacity,0),g.le(headerAllocation,capacity)),headerDomain=g.and(g.ge(fileBytes,20),g.ge(headerLength,5),g.ge(indexEncodedLength,4),g.ge(indexCapacity,4),g.le(g.add(20,indexEncodedLength),fileBytes),g.le(headerAllocation,262140)),uncompressed=g.ge(mod(header[19],32),16),entryLow=half(entry,4),entryHigh=entry[6],sumLow=g.add(firstFile,entryLow),wordLow=mod(sumLow,65536),wordHigh=g.add(entryHigh,g.floor(g.mul(sumLow,1/65536))),offsetLow=g.mul(wordLow,4),fileOffset=[mod(offsetLow,65536),g.add(g.mul(wordHigh,4),g.floor(g.mul(offsetLow,1/65536)))],storedLow=half(entry,8),storedHigh=entry[10],stored=g.add(storedLow,g.mul(storedHigh,65536)),boundedStored=g.le(storedHigh,3),boundedSize=g.add(storedLow,g.mul(g.min(storedHigh,3),65536)),uncompressedAllocation=g.mul(g.floor(g.mul(g.add(boundedSize,7),.25)),4),entryDomain=g.and(boundedStored,g.le(boundedSize,262136),g.le(fileOffset[1],3));
+ const supported=g.or(g.not(enabled),g.where(g.eq(op,0),g.cast(headerDomain,'float32'),g.cast(entryDomain,'float32'))),headerAccepted=g.and(enabled,g.eq(op,0),supported,signature,fits);
+ const zero=g.mul(op,0),before=header.map((x,i)=>i>=6&&i<=9?zero:x),after=before.map((x,i)=>i===6?g.add(zero,5):x);
+ for(const[name,value]of Object.entries({supported,signatureValid:signature,headerAccepted,headerAllocationPossible:fits,headerAllocationBytes:headerAllocation,headerCapacity:capacity,headerOutputPointerU16:g.cat(output),indexOutputPointerU16:g.cat(indexOutput),indexEncodedOffset:g.add(zero,20),indexEncodedLength,indexOutputCapacity:indexCapacity,headerBeforeDecompressionBytes:g.cat(before),headerAfterDecompressionBytes:g.cat(after),nextScratchRightArenaUsage:g.add(right,headerAllocation),fileCount:mod(half(header,4),4096),binarySearchStepCount:g.floor(g.mul(header[5],1/16)),isUncompressed:uncompressed,fileOffsetU16:g.cat(fileOffset),storedFileBytesU16:g.cat([storedLow,storedHigh]),storedFileBytes:stored,uncompressedReadSucceeded:g.gt(boundedSize,0),uncompressedAllocationBytesU16:g.cat([mod(uncompressedAllocation,65536),g.floor(g.mul(uncompressedAllocation,1/65536))]),uncompressedAllocationBytes:uncompressedAllocation,consumed:g.mul(scratch,0)}))g.output(value,name);
+ return g;
+}
+
+export function buildCommonGpcSearch(){
+ const g=new Graph('rom-common-gpc-search',{
+  inputContractVersion:1,authority,
+  scope:'The original unsigned CRC search, including its final zero-step comparison. Initial phase computes the first requested candidate; each step consumes only that actual candidate record and computes the next. A nonzero query with headerLength>0 returns entryList[-1] when no CRC matched, preserving the original pointer behavior rather than inventing a null result. All entry reads require retained raw bytes; this graph does not fabricate missing records.',
+  defaults:{phase:0,headerBytes:Array(20).fill(0),gpcPointerU16:[0,0],targetCRCU16:[0,0],entryCRCU16:[0,0],entryPresent:false,currentIndex:0,foundIndex:-1,rightAddition:0,enabled:true},
+  inputDomains:{phase:{width:1,min:0,max:1,integer:true},headerBytes:bytesDomain(20),gpcPointerU16:limbsDomain,targetCRCU16:limbsDomain,entryCRCU16:limbsDomain,currentIndex:{width:1,min:0,max:4095,integer:true},foundIndex:{width:1,min:-1,max:4095,integer:true},rightAddition:{width:1,min:0,max:32768,integer:true}}
+ });
+ const {mod,add,half}=math(g),phase=g.input('phase'),header=g.split(g.input('headerBytes',['N',20]),20),pointer=g.split(g.input('gpcPointerU16',['N',2]),2),crc=g.split(g.input('targetCRCU16',['N',2]),2),entry=g.split(g.input('entryCRCU16',['N',2]),2),entryPresent=g.input('entryPresent',['N',1],'bool'),current=g.input('currentIndex'),found=g.input('foundIndex'),right=g.input('rightAddition'),enabled=g.input('enabled',['N',1],'bool'),count=mod(half(header,4),4096),steps=g.floor(g.mul(header[5],1/16)),headerLength=half(header,6),nonnull=g.and(g.gt(headerLength,0),g.or(g.gt(crc[0],0),g.gt(crc[1],0)));
+ let initial=g.constant(1);for(let i=1;i<=15;i++)initial=g.where(g.eq(steps,i),2**i,initial);
+ const initializing=g.eq(phase,0),halfRight=g.floor(g.mul(right,.5)),candidate=g.add(current,halfRight),within=g.lt(candidate,count),stepping=g.and(enabled,g.not(initializing),nonnull,g.gt(right,0)),equal=g.and(g.eq(crc[0],entry[0]),g.eq(crc[1],entry[1])),greater=g.or(g.gt(crc[1],entry[1]),g.and(g.eq(crc[1],entry[1]),g.gt(crc[0],entry[0]))),supported=g.or(g.not(stepping),g.not(within),entryPresent),compare=g.and(stepping,supported,within),nextCurrent=g.where(initializing,0,g.where(g.and(compare,greater),candidate,current)),nextFound=g.where(initializing,-1,g.where(g.and(compare,equal),candidate,found)),nextRight=g.where(initializing,initial,g.where(stepping,halfRight,right)),complete=g.or(g.not(nonnull),g.and(g.not(initializing),g.eq(nextRight,0))),nextCandidate=g.add(nextCurrent,g.floor(g.mul(nextRight,.5))),entryList=add(pointer,g.mul(headerLength,4)),resultPointer=add(entryList,g.mul(nextFound,12));
+ for(const[name,value]of Object.entries({supported,nextCurrentIndex:nextCurrent,nextFoundIndex:nextFound,nextRightAddition:nextRight,candidateIndex:nextCandidate,candidateEntryPointerU16:g.cat(add(entryList,g.mul(nextCandidate,12))),candidateEntryRequired:g.and(nonnull,g.not(complete),g.lt(nextCandidate,count)),complete,returnPointerU16:g.cat(resultPointer.map(x=>g.where(nonnull,x,0))),returnNonNull:nonnull,matched:g.ge(nextFound,0),returnIndex:nextFound,consumed:g.mul(current,0)}))g.output(value,name);return g;
+}
+
+if(process.argv[1]===fileURLToPath(import.meta.url))for(const build of[buildCommonFilenameCRC,buildCommonGpcArchive,buildCommonGpcSearch])console.log(JSON.stringify(await build().save(),null,2));

@@ -1,12 +1,13 @@
-import {cameraProgramAdmissionInput} from '../graph-v2/camera-admission-runner.mjs';
+import {createCameraProgramRunner,CAMERA_PROGRAM_MODELS} from '../graph-v2/camera-program-runner.mjs';
 import {validateGraphInputs} from '../graph-v2/input-domains.mjs';
 
 const IDS=[0,1,2,3,192,193,194,195,196,197,198,199],clone=x=>structuredClone(x),pad=(a,n,v=0)=>[...a,...Array(n-a.length).fill(v)],word=b=>b.reduce((n,x,i)=>n+x*2**(8*i),0),limbs=n=>[n%65536,Math.floor(n/65536)];
-export const COMMON_PROGRAM_ADMISSION_MODELS=['rom-common-presentation-program-project','rom-camera-program-admission4'];
+export const COMMON_PROGRAM_ADMISSION_MODELS=['rom-common-presentation-program-project',...CAMERA_PROGRAM_MODELS];
 
 // Called only after the actual file parser has produced a program. It preserves
 // the already planned world, and does not call the outer planning parent.
 export async function createCommonProgramAdmissionRunner({runGraph,getModel,onTrace}={}){
+ const residentRunner=await createCameraProgramRunner({runGraph,getModel,onTrace});
  async function call(name,input){const ir=await getModel(name);if(!ir)throw Error('Missing shared initialization model '+name);const values={...ir.contract.defaults,...input},feeds=Object.fromEntries(ir.inputs.map(d=>[d.name,Array.isArray(values[d.name])?values[d.name]:[values[d.name]]]));const errors=validateGraphInputs(ir.contract,feeds);if(errors.length)throw Error(name+': '+errors.join('; '));const output=(await runGraph(name,[feeds]))[0];await onTrace?.({model:name,inputs:[clone(feeds)],outputs:[clone(output)]});return output;}
  async function run({rows}){
   const states=[],admissionInputs=[],admission=[],entry=[],planningStates=[],planningControl=[];
@@ -14,7 +15,7 @@ export async function createCommonProgramAdmissionRunner({runGraph,getModel,onTr
    const program=row.loadedProgram;
    if(!program||!Array.isArray(program.codes))throw Error('An actual decoded linked program is required');
    for(const c of program.codes){if(!Number.isInteger(c.opcode)||c.opcode<0||c.opcode>16777215||!Number.isInteger(c.parameter??0)||(c.parameter??0)<0||(c.parameter??0)>65535)throw Error('Invalid linked opcode or parameter');if(c.opcode===12&&c.parameterKnown===false)throw Error('The actual opcode0c parameter producer is required');if(c.next!==undefined)throw Error('Program codes must retain actual sequential next-pointer order');}
-   const input=cameraProgramAdmissionInput(row,row.enabled!==false),resident=await call('rom-camera-program-admission4',input);
+   const lookup=await residentRunner.run({rows:[row]}),input=lookup.contexts[0],resident=lookup.outputs[0];
    if(!resident.supported[0])return{complete:false,reason:'Original resident membership lookup is outside the shared contract',states};
    const current=row.commands[row.currentActionIndex];if(!current?.participants?.length)throw Error('Program initialization needs the actual current command and source');
    const record=row.rawActions.map(h=>Uint8Array.from(h.match(/../g),b=>parseInt(b,16))).find(b=>(b[4]+256*b[5])%4096===current.actionId);

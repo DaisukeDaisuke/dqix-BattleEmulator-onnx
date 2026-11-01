@@ -8,6 +8,7 @@ import {buildCommonTargetCallbacks,buildCommonAiStep} from './common-target-call
 import {ACTOR_FIELDS} from './rules.mjs';
 import {COMMON_RAW_TIMER_FIELDS,COMMON_RAW_TIMER_OFFSETS} from './common-modifier-rules.mjs';
 import {COMMON_BATTLE_CAMERA_MODELS} from '../runtime/common-battle-camera.mjs';
+import {COMMON_CAMERA_PROGRAM_DATA} from '../data/common-camera-program-data.mjs';
 const directory=new URL('./',import.meta.url),hash=b=>createHash('sha256').update(b).digest('hex');
 
 export function buildCommonRandom(){
@@ -76,6 +77,7 @@ export async function writeCommonProgram(){
     seedRepresentation:'Eight base256 float32 limbs preserve uint64 LCG exactly.',
     presentation:{mode:'battle-camera',factory:'runtime/common-battle-camera.mjs',models:COMMON_BATTLE_CAMERA_MODELS,outerCalls:'Computed common command queue and explicit original advances.',externalInput:'One uint32 row+4 word per actual compact camera row at a genuine new dispatcher input boundary, up to12. Read-only ONNX predicates declare rowIds and wordCount. Calls that do not consume row+4 request no input. Initial visual/program/camera conditions are packaged data or explicit battle inputs.',boundary:'Retain computed RNG, battle state, world and camera memory across calls and turns. Candidate inputs and observations are separate; observations only filter computed branches. ROM, rendering, font, stack, asset loader and heap execution are not runtime dependencies.'},
     search:{factory:'runtime/common-battle-search.mjs',row4DefaultDomain:'All uint32 values independently for each declared actual row: 2^(32*wordCount) Cartesian candidates represented by exact lazy cursors. Padding rows are never unknowns.',survivors:'Keep every consistent computed branch; budgets and unsupported paths remain resumable or blocked, never rejected implicitly.'},
+    cameraProgramData:{schema:COMMON_CAMERA_PROGRAM_DATA.schema,sha256:hash(JSON.stringify(COMMON_CAMERA_PROGRAM_DATA)),runtimeRomRequired:false,source:'data/common-camera-program-data.mjs'},
     completeGameClaim:false};
   await writeFile(new URL('common-battle-program.json',directory),JSON.stringify(program,null,2)+'\n');
   return {program,sha256:hash(JSON.stringify(program))};

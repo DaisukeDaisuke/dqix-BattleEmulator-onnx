@@ -4,9 +4,10 @@ import {createCameraEnclosingPhaseRunner,CAMERA_ENCLOSING_PHASE_MODELS} from '..
 import {createCameraRetainedMemoryRunner} from '../graph-v2/camera-retained-memory-runner.mjs';
 import {cameraEnclosingGeometryInitial} from '../graph-v2/camera-enclosing-geometry-runner.mjs';
 import {createCameraRow4BoundaryPlanner} from '../graph-v2/camera-parent-runner.mjs';
+import {createCameraProgramResourceRunner,COMMON_CAMERA_RESOURCE_MODELS,COMMON_CAMERA_PROGRAM_DATA,withPackagedCameraPrograms,retainCameraResult} from './common-camera-program-resources.mjs';
 
 export const COMMON_BATTLE_CAMERA_ADAPTER_ID='dq9-common-battle-camera-v1';
-export const COMMON_BATTLE_CAMERA_MODELS=[...new Set([...CAMERA_ENCLOSING_PHASE_MODELS,'rom-common-camera-command','rom-common-periodic-presentation','rom-common-presentation-advance','rom-common-camera-turn'])];
+export const COMMON_BATTLE_CAMERA_MODELS=[...new Set([...CAMERA_ENCLOSING_PHASE_MODELS,...COMMON_CAMERA_RESOURCE_MODELS,'rom-common-camera-command','rom-common-periodic-presentation','rom-common-presentation-advance','rom-common-camera-turn'])];
 const IDS=[0,1,2,3,192,193,194,195,196,197,198,199],clone=x=>structuredClone(x),array=x=>Array.isArray(x)?x:[x],seedHex=s=>'0x'+s.slice().reverse().map(x=>x.toString(16).padStart(2,'0')).join('');
 const pad=(a,n,v=0)=>Array.from({length:n},(_,i)=>a[i]??v),same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 class Budget extends Error{constructor(){super('Atomic camera or command preparation exceeded the transition budget');this.code='DQ9_CAMERA_BUDGET';}}
@@ -21,11 +22,13 @@ export function createInitialBattleCameraState({input,maxTurns=1}={}){
   if(!input.camera?.initial)throw Error('Packaged or explicit initial camera conditions are required');
   if(Object.hasOwn(input.camera,'row4Words'))throw Error('Supply row+4 only at needs-row4 boundaries, not in the initial battle state');
   const battle=clone(input);battle.camera.mode='battle-camera';battle.camera.nextNumericTurnReady=true;
+  battle.camera.initial=withPackagedCameraPrograms(battle.camera.initial);
   return{schema:'dq9-battle-camera-state-v1',adapterId:null,battle,phase:'numeric',targetCompletedTurns:(battle.completedTurns??0)+maxTurns,world:null,commands:[],commandIndex:0,turnEntryPending:false,pendingCamera:null,pendingBoundary:null,acceptedRow4:null,row4History:[],observationsCompleted:0};
 }
 
 export async function createCommonBattleCameraAdapter({program,definitions,getModel,runGraph,cpuDoubleProvider='onnxruntime-wasm'}={}){
   if(cpuDoubleProvider!=='onnxruntime-wasm')throw Error('The camera DOUBLE graph requires the explicitly selected ONNX Runtime WASM provider');
+  if(program.cameraProgramData?.sha256!==await commonProgramHash(COMMON_CAMERA_PROGRAM_DATA))throw Error('Packaged camera definition identity differs from the common program');
   const modelCache=new Map(),get=async name=>{if(!modelCache.has(name))modelCache.set(name,Promise.resolve(getModel(name)));return modelCache.get(name);};
   const numeric=await createCommonBattleRunner({program,definitions,getModel:get,runGraph}),prepare=createCommonPresentationRunner({definitions,cpuDoubleProvider});
   const adapterId=COMMON_BATTLE_CAMERA_ADAPTER_ID+':'+numeric.programHash+':'+await commonProgramHash(definitions);
@@ -89,8 +92,12 @@ export async function createCommonBattleCameraAdapter({program,definitions,getMo
       const s=w.state,exec=scoped(maxTransitions),initial=s.pendingCamera.initial,row=clone(s.pendingCamera.row);row.row4Words=clone(s.acceptedRow4?.words??[]);
       const runner=await(initial?createCameraEnclosingPhaseRunner:createCameraRetainedMemoryRunner)({getModel:get,runGraph:exec,runDoubleGraph:exec}),out=await runner.run({rows:[row],maxRouteAttempts});
       if(!out.complete){const reason=out.reason??'Camera boundary not supported';if(/budget|attempt|limit/i.test(JSON.stringify(reason)))budget(w,reason);else blocked(w,reason);return;}
-      const g=clone(out.cameraGeometry[0]),current=clone(out.states[0]);
-      s.world={...current,cameraGeometry:g,cameraU16:[...out.cameraU16[0]],cameraState:[g.counter,g.globals7[0],g.globals7[1],g.globals7[3],g.globals7[4]],cameraInitialized:!!g.initialized,commandBaseU16:[...row.commandBaseU16],cameraRngPointerU16:[...row.cameraRngPointerU16],retainedMemoryOrigin:'computed-previous-outer-v1'};
+      let current=retainCameraResult(out,row);
+      if(current.presentationState===4){
+        const resources=await createCameraProgramResourceRunner({getModel:get,runGraph:exec,runDoubleGraph:exec}),continued=await resources.run({row:current,maxRouteAttempts});
+        current=continued.row;if(!continued.complete){s.world=current;s.battle.seed=[...current.seed];s.battle.position=current.position[0];blocked(w,continued.reason);return;}
+      }
+      s.world=current;
       s.battle.seed=[...current.seed];s.battle.position=current.position[0];s.turnEntryPending=false;if(s.acceptedRow4)s.row4History.push({...clone(s.acceptedRow4),rowIds:[...s.pendingBoundary.rowIds],computedSeed:[...s.battle.seed],computedPosition:s.battle.position});s.phase='after-observation';s.observationsCompleted++;
       s.pendingCamera=null;finish(w,'observation',{observationId:cameraId(s),snapshot:snapshot(s)});
     }catch(error){if(error.code==='DQ9_CAMERA_BUDGET')budget(w,error.message);else blocked(w,error.message);}}));

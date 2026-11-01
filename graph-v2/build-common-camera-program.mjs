@@ -62,7 +62,11 @@ export function buildCommonCameraProgramAdmission(){
   for(let b=0;b<4;b++){const value=flags[i*4+b],oldBit=g.sub(g.floor(g.mul(value,1/8)),g.mul(g.floor(g.mul(value,1/16)),2));nextFlags.push(b===1?g.where(g.and(reached,present[i],member),g.add(value,g.mul(g.sub(1,oldBit),8)),value):value);}
  }
  const operation=g.add(g.floor(g.mul(word18[0],1/32)),g.mul(g.sub(word18[1],g.mul(g.floor(g.mul(word18[1],1/16)),16)),8)),fallbackEntered=g.and(enabled,snap[0],sourceExists,g.not(reached),record),unsupportedSpecial=g.and(fallbackEntered,g.eq(operation,34)),resource=g.and(fallbackEntered,g.not(unsupportedSpecial)),category=g.floor(g.mul(word18[1],1/16));
+ const programFlags=g.input('programFlagsU16',['N',2]),partySpell=g.and(g.le(h[1],3),g.or(g.and(record,g.eq(category,2)),g.eq(h[0],504),g.eq(h[0],914)));
+ g.contract.defaults.programFlagsU16=[0,0];g.contract.inputDomains.programFlagsU16=integer(2,0,65535);
  const outputs={selectedProgram:selected,selectorReached:reached,membershipCount:normalCount,secondProgram:normalSecond,resetOverride:reset,specialOverride:g.and(enabled,sourceExists,special),nextObjectFlagsBytes:g.cat(nextFlags),nextPresentationState:g.where(resource,4,state),resourceRequest:resource,resourceCategory:category,resourceArchiveKind:commonMissingProgramArchiveKind(g,category,h[1]),messageResourceRequest:reached,resourceRequestCount:g.add(g.cast(reached,'float32'),g.cast(resource,'float32')),supported:g.not(unsupportedSpecial),consumed:g.mul(h[0],0)};
+ outputs.nextProgramFlagsU16=g.where(reached,g.cat([g.mul(g.cast(partySpell,'float32'),2),g.mul(state,0)]),programFlags);
+ g.contract.scope+=' On actual initialization, script+0x1c4 (scene+0x3e8) is cleared and the party spell/action504/914 bit1 is set in the original order; otherwise its computed prior word is retained.';
  for(const[name,value]of Object.entries(outputs))g.output(value,name);return g;
 }
 

@@ -8,6 +8,7 @@ import {buildHtml} from './build-html.mjs';
 import {buildModelBundles} from './build-model-bundles.mjs';
 import {ENCOUNTER_DEFINITIONS,BATTLE_DEFINITIONS,makeEncounterInput} from '../data/common-battle.mjs';
 import {COMMON_BATTLE_CAMERA_EXAMPLE} from '../data/common-battle-camera-example.mjs';
+import {COMMON_CAMERA_PROGRAM_DATA} from '../data/common-camera-program-data.mjs';
 import {CAMERA_EXPLICIT_CPU_MODELS} from '../graph-v2/camera-enclosing-phase-runner.mjs';
 import {ACTOR_FIELDS} from '../graph-v2/rules.mjs';
 
@@ -74,13 +75,14 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
   await writeFile(join(out,'data/definitions.json'),JSON.stringify(BATTLE_DEFINITIONS)+'\n');
   await writeFile(join(out,'data/encounters.json'),JSON.stringify(encounters,null,2)+'\n');
   await writeFile(join(out,'data/action-coverage.json'),JSON.stringify(actionCoverage,null,2)+'\n');
+  await writeFile(join(out,'data/camera-programs.json'),JSON.stringify(COMMON_CAMERA_PROGRAM_DATA)+'\n');
   const html=await buildHtml({root,out,models:ordered,commonProgram,definitions:BATTLE_DEFINITIONS,encounters,actionCoverage,cameras,actorFields:ACTOR_FIELDS});
   const coverage={battlePrograms:1,bossSpecificPrograms:false,commonProgramHash,encounterInputs:encounters.length,cameraModes:1,publicPrimitiveGraphs:PUBLIC_MODELS.length,totalGraphs:ordered.length,runtimeRomRequired:false,observationsFilterOnly:true,allSurvivorsRetained:true,learnedApproximation:false,implicitCpuFallback:false,fullGameComplete:false,authority:'Original ROM execution and matching decompile; previous emulator is an independent comparator.',limitations:['An encounter is input data, not a separately verified battle. Numeric and camera command coverage are reported separately.','Every declared row+4 candidate remains in an exact lazy domain; an explicit execution budget does not narrow the search. Unknown or unsupported results remain blocked.','Observed values only filter computed snapshots. Every consistent branch retains its own computed RNG, battle, world and camera memory.','WASM is the default. Optional WebGPU is strict with no CPU fallback, apart from separately declared DOUBLE models executed by standalone WASM. Actual provider counts are reported; hardware speedup is not inferred.']};
   const runtimeIndex={schema:'dq9-runtime-index-v3',coverage,
     models:bundled.models,bundles:bundled.bundles,
     delivery:{format:'dq9-onnx-bundle-v1',modelDownloadRequests:bundled.modelRequests,independentOnnxModels:ordered.length,modelBytesUnchanged:true,standaloneHtmlModelRequests:0,loader:'runtime/model-bundle.mjs'},
     commonProgram:{id:'common-battle',programHash:commonProgramHash,path:'programs/common-battle.json',moduleHashes:Object.fromEntries(commonProgram.modules.map(module=>[module.name,module.sha256]))},
-    definitions:'data/definitions.json',actionCoverage:'data/action-coverage.json',
+    definitions:'data/definitions.json',actionCoverage:'data/action-coverage.json',cameraPrograms:'data/camera-programs.json',
     encounters:encounters.map(({id,titleJa})=>({id,titleJa,programHash:commonProgramHash,program:'common-battle'})),
     encounterInputs:'data/encounters.json',cameras,html:'dq9-battle-emulator.html'};
   await writeFile(join(out,'runtime-index.json'),JSON.stringify(runtimeIndex,null,2)+'\n');
