@@ -402,7 +402,11 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
       if(!s.finished&&!skipPost)for(const sourceId of command.sources){const source=actorById(s,sourceId);if(!exists(source))continue;
         const beforeModifiers=[source.rawStatus,source.rawFlags,source.statusKinds,...source.rawRanks];
         const out=await call(s,lane,'postStatus',{...identityInput(s,source),targetValid:alive(actorById(s,source.aux[6]))});commitRandom(s,out);commitActor(source,out);
-        const afterModifiers=[source.rawStatus,source.rawFlags,source.statusKinds,...source.rawRanks];occurrence.auxiliaryEvent||=afterModifiers.some((value,i)=>value!==beforeModifiers[i]);
+        const afterModifiers=[source.rawStatus,source.rawFlags,source.statusKinds,...source.rawRanks];
+        if(s.camera.mode==='battle-camera'){
+          if(!out.cameraRecoveryEvent)throw new Boundary('camera-recovery-metadata',{actor:source.actorId});
+          if(yes(out.cameraRecoveryEvent)&&!occurrence.cameraRecoverySources.includes(source.actorId))occurrence.cameraRecoverySources.push(source.actorId);
+        }else occurrence.auxiliaryEvent||=afterModifiers.some((value,i)=>value!==beforeModifiers[i]);
       }
       if(capture)occurrence.presentationAfter={source:presentationSnapshot(a),target:presentationSnapshot(actorById(s,occurrence.impacts[0]?.targetId??occurrence.targets[0]))};
       occurrence.comboCount=s.combo[1];occurrence.endPosition=s.position;occurrence.outcome=s.outcome;s.turnRecords.push(occurrence);
@@ -410,7 +414,7 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
     async function commandEffects(s,lane,command,beforePosition=s.position){
       const a=actorById(s,command.sourceId);if(!alive(a))throw new Boundary('command-source',{actor:command.sourceId});
       let record=action(command.actionId),critical=false,consumeTension=false,counterOccurred=false;
-      const occurrence={turn:s.turn,sourceId:a.actorId,participants:[...command.sources],actionId:command.actionId,targets:[],impacts:[],startPosition:beforePosition,event:EVENT_ACTIONS.has(command.actionId),auxiliaryEvent:false};
+      const occurrence={turn:s.turn,sourceId:a.actorId,participants:[...command.sources],actionId:command.actionId,targets:[],impacts:[],startPosition:beforePosition,event:EVENT_ACTIONS.has(command.actionId),auxiliaryEvent:false,cameraReactionSources:[],cameraRecoverySources:[]};
       const capture=s.camera.mode!=='numeric-only';if(capture)occurrence.presentationBefore={source:presentationSnapshot(a)};
       {
         if(!record)throw new Boundary('action-definition',{actionId:command.actionId});
@@ -491,7 +495,7 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
             occurrence.populationEvents??=[];occurrence.populationEvents.push({operation:effectiveRecord.operation,actionId:effectiveRecord.id,sourceId:effectSource.actorId,inserted,actorId:newActorId,entrySeed:Array.from(out.populationSeed),entryPosition:scalar(out.populationPosition)});occurrence.auxiliaryEvent=true;
           }
           occurrence.impacts.push({sourceId:effectSource.actorId,originalSourceId:a.actorId,targetId,originalTargetId,preRedirectTargetId,effectiveActionId:effectiveRecord.id,damage:scalar(out.damage),internalDamage:scalar(out.internalDamage),recovery:scalar(out.recoveryAmount),critical:yes(out.critical),originalCritical:extraCritical?originalHitCritical:yes(out.critical),hp:value(target,'hp'),mp:value(target,'mp'),effectApplied:yes(out.effectApplied),
-            comboCount:s.combo[1],...(out.accuracyPassed?{accuracyPassed:yes(out.accuracyPassed)}:{}),...(out.dodged?{dodged:yes(out.dodged)}:{}),...(out.guarded?{guarded:yes(out.guarded)}:{}),...(out.blindMiss?{blindMiss:yes(out.blindMiss)}:{}),...(out.operationHit?{operationHit:yes(out.operationHit)}:{}),
+            comboCount:s.combo[1],...(out.cameraFlagsB?{cameraFlagsB:scalar(out.cameraFlagsB)}:{}),...(out.accuracyPassed?{accuracyPassed:yes(out.accuracyPassed)}:{}),...(out.dodged?{dodged:yes(out.dodged)}:{}),...(out.guarded?{guarded:yes(out.guarded)}:{}),...(out.blindMiss?{blindMiss:yes(out.blindMiss)}:{}),...(out.operationHit?{operationHit:yes(out.operationHit)}:{}),
             ...(capture?{presentationBefore:impactBefore,presentationAfter:{source:presentationSnapshot(effectSource),target:presentationSnapshot(target)}}:{})});
           occurrence.auxiliaryEvent||=yes(out.charged)||yes(out.angerActivated)||yes(out.escaped)||scalar(out.weaponMpDrained??0)>0||value(target,'hp')<=0;
         }
@@ -504,7 +508,8 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
             sourceActor:a.actor,sourceAux:a.aux,sourceStatus:a.status,sourceTension:a.tension,sourcePreparation:a.preparation,sourceHistory:[a.ai.revengeId??-1,a.ai.previousId??-1],sourceWakeSkip:a.wakeSkip,sourceState3c:a.state3c,
             sourceRawStatusBytes:bytes32(a.rawStatus),sourceRawFlagsBytes:bytes32(a.rawFlags),sourceStatusKindsBytes:[a.statusKinds&255,a.statusKinds>>>8],sourceRawRanks:a.rawRanks,sourceRawTimers:a.rawTimers,...recordInputs});
           if(!yes(out.supported))throw new Boundary('common-after-action',{actor:a.actorId,actionId:command.actionId});
-          commitRandom(s,out);commitActor(a,out,'Source');occurrence.auxiliaryEvent||=yes(out.eventCreated);
+          commitRandom(s,out);commitActor(a,out,'Source');
+          if(s.camera.mode==='battle-camera'&&yes(out.eventCreated)&&!yes(out.deathReset)){if(!occurrence.cameraReactionSources.includes(a.actorId))occurrence.cameraReactionSources.push(a.actorId);}else occurrence.auxiliaryEvent||=yes(out.eventCreated);
           occurrence.afterAction={records:resultRecords,recoveryAmount:scalar(out.recoveryAmount),hpRecovered:scalar(out.hpRecovered),mpRecovered:scalar(out.mpRecovered),selfDamage:scalar(out.selfDamage),deathReset:yes(out.deathReset),eventCreated:yes(out.eventCreated),...(capture?{presentationBefore:before,presentationAfter:presentationSnapshot(a)}:{})};
         }
         if(needsBladeRecoil){
@@ -514,12 +519,13 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
             sourceRawStatusBytes:bytes32(a.rawStatus),sourceRawFlagsBytes:bytes32(a.rawFlags),sourceStatusKindsBytes:[a.statusKinds&255,a.statusKinds>>>8],sourceRawRanks:a.rawRanks,sourceRawTimers:a.rawTimers,...recordInputs,
             actorIds:ids,actorPresent:actors.map(actor=>Number(exists(actor))),actorDead:actors.map(actor=>Number(!!actor?.dead)),actorExcluded:actors.map(actor=>Number(!!actor?.excluded)),actorBladeDefense:actors.map(actor=>Number(!!(actor?.rawFlags&0x20))),actorArmorRecoil:actors.map(actor=>Number(!!actor?.armorRecoil)),actorParty:ids.map(id=>Number(id<4))});
           if(!yes(out.supported))throw new Boundary('common-blade-recoil',{actor:a.actorId,actionId:command.actionId});
-          commitRandom(s,out);commitActor(a,out,'Source');occurrence.auxiliaryEvent||=yes(out.eventCreated);
+          commitRandom(s,out);commitActor(a,out,'Source');
+          if(s.camera.mode==='battle-camera'&&yes(out.eventCreated)&&!yes(out.deathReset)){if(!occurrence.cameraReactionSources.includes(a.actorId))occurrence.cameraReactionSources.push(a.actorId);}else occurrence.auxiliaryEvent||=yes(out.eventCreated);
           occurrence.bladeRecoil={selfDamage:scalar(out.selfDamage),amounts:Array.from(out.recoilAmounts),targetIds:Array.from(out.recoilTargetIds),applied:Array.from(out.recoilApplied),deathReset:yes(out.deathReset),eventCreated:yes(out.eventCreated),...(capture?{presentationBefore:before,presentationAfter:presentationSnapshot(a)}:{})};
         }
       }
       const end=await call(s,lane,'commandEnd',{seed:s.seed,position:s.position,scenarioId:s.scenarioId,sourceActor:a.actor,sourceAux:a.aux,sourceConfig:a.config,sourceTension:a.tension,sourceRawStatusBytes:bytes32(a.rawStatus),consumeTension,counterOccurred,actionId:command.actionId,context:s.context,opponentsAlive:(party(a)?enemies(s):parties(s)).some(alive),chargedPartyCount:charged(s),coupBlocked:!!s.coupBlocked,enabled:true});
-      commitRandom(s,end);commitActor(a,end,'Source');s.context=Array.from(end.nextContext);occurrence.auxiliaryEvent||=yes(end.charged);outcome(s);
+      commitRandom(s,end);commitActor(a,end,'Source');s.context=Array.from(end.nextContext);occurrence.auxiliaryEvent||=yes(end.charged);if(yes(end.tensionConsumed))occurrence.cameraRecoverySources.push(a.actorId);outcome(s);
       if(capture)occurrence.presentationAfter={source:presentationSnapshot(a),target:presentationSnapshot(actorById(s,occurrence.impacts[0]?.targetId??occurrence.targets[0]))};
       occurrence.comboCount=s.combo[1];occurrence.endPosition=s.position;occurrence.outcome=s.outcome;return occurrence;
     }

@@ -7,6 +7,7 @@ import {coupDamageBonus,coupEligibility,coupLevelDuration,angerCheck} from './li
 import {enemyPackedDamage} from './encounter-expansion/build-packed-damage.mjs';
 import {columnSelectorDamage,SELECTOR_COLUMN_IDS} from './encounter-expansion/build-selector-columns.mjs';
 import {levelScaledSelectorDamage} from './encounter-expansion/build-level-scaled-selector.mjs';
+import {COMMON_LEVEL_SELECTOR_IDS,commonLevelSelectorDamage} from './common-level-selector-rules.mjs';
 import {raiseTension} from './encounter-expansion/build-tension-primitives.mjs';
 import {commonTensionCoefficient as tensionCoefficient,commonTensionBonus as tensionBonus,commonTensionNumericSupported,commonTensionReduction,COMMON_TENSION_REDUCTION_AUTHORITY,COMMON_TENSION_NUMERIC_STAGES} from './common-tension-reduction.mjs';
 import {decodedDispelColumns} from './encounter-expansion/build-dispel-action.mjs';
@@ -23,6 +24,7 @@ import {commonBladeDamage} from './build-common-blade-recoil.mjs';
 import {commonScenarioMode,commonScenarioPrimaryDamage} from './common-scenario-rules.mjs';
 import {commonPoisonState,commonAdditionalPoison} from './common-poison-state.mjs';
 import {commonAdditionalAilment} from './common-additional-ailment.mjs';
+import {commonAdditionalBlind,COMMON_ADDITIONAL_BLIND_AUTHORITY} from './common-additional-blind.mjs';
 import {commonAdditionalRank,COMMON_ADDITIONAL_RANK_AUTHORITY} from './common-additional-rank.mjs';
 import {COMMON_STANCE_RULES,commonStanceRank} from './common-stance-rules.mjs';
 import {decodeMetalRuleFields,commonMetalPreCritical,commonMetalBeforeMinimum,commonMetalMinimumAllowed,commonMetalAfterMinimum} from './common-metal-damage.mjs';
@@ -39,7 +41,7 @@ const pack=(g,names,value)=>g.cat(names.map(name=>value[name]));
 const asBool=(g,value)=>g.gt(value,0);
 const scalar=(g,value)=>g.cast(value,'float32');
 const zero=(g)=>g.eq(0,1);
-const supportedSelectors=new Set([...SELECTOR_COLUMN_IDS,...COMMON_STATE_SELECTOR_IDS,...COMMON_COMMAND_SELECTOR_IDS,43,45,47,63]);
+const supportedSelectors=new Set([...SELECTOR_COLUMN_IDS,...COMMON_STATE_SELECTOR_IDS,...COMMON_COMMAND_SELECTOR_IDS,...COMMON_LEVEL_SELECTOR_IDS,43,45,47,63]);
 const damageRows=new Set(rom.damage.map(row=>row.id));
 const damageById=new Map(rom.damage.map(row=>[row.id,row]));
 // The seven 8-byte records, including the terminator, were read directly from
@@ -72,7 +74,7 @@ export const COMMON_ACTION_RULES=Object.freeze(rom.actions.map(action=>{
   const bytes=Buffer.from(action.raw,'hex'),rule=decodeBossActionRule(action.id),word14=bytes.readUInt32LE(20),word1c=bytes.readUInt32LE(28),word2c=bytes.readUInt32LE(44),magicMinimum=action.w04>>>12&1023,magicMaximum=action.w04>>>22&1023,chanceMinimum=word14>>>7&127,chanceMaximum=word14>>>14&127;
   const magicSource=action.w10&0x4000?1:action.w10&0x8000?2:0,packed=damageById.get(action.damageId),special=packedSpecialById.get(action.id),packedSource=rule.accuracyMode===2?(special?.source??magicSource):0,packedMinimum=special?.minimum??magicMinimum,packedMaximum=special?.maximum??magicMaximum;
   let family=0,reason='operation';
-  if(rule.operation===1&&supportedSelectors.has(action.selector)&&action.selector!==47&&[0,1,2,4,7,8,9,10,11,12,13,14].includes(rule.additional)){family=1;reason=null;}
+  if(rule.operation===1&&supportedSelectors.has(action.selector)&&action.selector!==47&&[0,1,2,4,7,8,9,10,11,12,13,14,18].includes(rule.additional)){family=1;reason=null;}
   if(rule.operation===2&&action.selector===0&&rule.additional===0){family=2;reason=null;}
   if([3,4,5].includes(rule.operation)&&action.selector===0&&[0,8,17].includes(rule.additional)&&rule.parameter!==0&&Math.abs(rule.parameter)<=2){family=3;reason=null;}
   if(rule.operation===8&&action.selector===0&&rule.additional===0){family=4;reason=null;}
@@ -251,7 +253,7 @@ export function buildCommonCommandBegin(){
 function buildTargetKernel(){
   let weaponAlwaysOneApplied,weaponClearGuard,additionalAilmentApplied,additionalMagicBarrier,targetRawTimers;
   let sa,ta,sc,tc,sourceTension,targetTension,sourcePreparation,targetPreparation,targetPresent,targetMetal,targetKinds,sourceMagic,sourcePackedScale,sourceWeapon,sourceWideWeapon,hitIndex,rawModifiers,chargedCount,coupBlocked,scenarioMode,selectedCritical,raiseResult,transferred,recovered,mpRecovered,escaped,dispelApplied,blindApplied,clearBladeDefenseFlag,routingResolved,allowTension,criticalAlreadyDrawn,suppliedCritical,resetCombo,skipComboUpdate,isCounter,originalAction,sourceCriticalBaseRate,criticalHitCount,selectorScratchWritten,selectorScratch,populationInsertionPossible,populationInserted,populationSeed,populationPosition,weaponMpDrained;
-  return buildBossActionCore({name:'rom-common-target-internal',actionIds:COMMON_SUPPORTED_ACTION_IDS,actionRules:rules,independentActors:true,allowPartyActions:true,gatherTargets:false,checkMp:false,spendMp:false,advanceContext:false,sharedBeforeTargetCheck:true,commandCritical:true,dataDrivenRank:true,exposeHitResults:true,fullPostprocessOnBlocked:true,
+  return buildBossActionCore({name:'rom-common-target-internal',actionIds:COMMON_SUPPORTED_ACTION_IDS,actionRules:rules,independentActors:true,allowPartyActions:true,gatherTargets:false,checkMp:false,spendMp:false,advanceContext:false,sharedBeforeTargetCheck:true,commandCritical:true,dataDrivenRank:true,exposeHitResults:true,fullPostprocessOnBlocked:true,commandHeaderMetadata:true,
     sharedDraw(g,rng,gate){const already=g.input('sharedAlreadyDrawn',['N',1],'bool'),value=g.input('sharedRoll');return g.where(already,value,rng.bounded(g.and(gate,g.not(already)),100));},
     sourceEligibility(g,r,source){const prepared=g.input('preparedConfusion',['N',1],'bool');allowTension=g.input('allowTension',['N',1],'bool');return g.or(g.and(routingResolved,g.not(allowTension)),g.eq(r.operation,0),g.and(...['sleep','paralysis','skip'].map(k=>g.eq(source[k],0)),g.or(g.eq(source.confusion,0),prepared)));},
     targetEligibility(){return targetPresent;},
@@ -268,7 +270,7 @@ function buildTargetKernel(){
       sourceCriticalBaseRate=g.input('sourceCriticalBaseRate');criticalHitCount=g.input('criticalHitCount');
       populationInsertionPossible=g.input('populationInsertionPossible',['N',1],'bool');const populationContext=g.input('populationContextAvailable',['N',1],'bool'),summon=g.or(g.eq(r.operation,11),g.eq(r.operation,12));
       const numericTension=g.and(allowTension,g.gt(r.tensionFlag,0),g.or(g.gt(sourceTension.low,0),g.gt(sourceTension.high,0))),tensionSupported=g.or(g.not(numericTension),commonTensionNumericSupported(g,sourceTension.stage));
-      return g.and(tensionSupported,g.or(g.not(summon),g.and(populationContext,g.not(partySource),g.eq(source.id,target.id),g.not(isCounter))),g.or(g.le(target.defend,3),g.and(coverResolved,g.ge(target.defend,6),g.le(target.defend,8)),g.and(routingResolved,g.or(...[4,5,9].map(value=>g.eq(target.defend,value))))),g.or(g.and(routingResolved,g.not(allowTension)),g.eq(sourcePreparation[0],0),g.eq(r.operation,0)),g.or(g.eq(targetTension.high,0),g.and(g.eq(r.operation,1),g.or(...[0,1,2,4,7,8,9,10,11,12,13,14].map(value=>g.eq(r.additional,value)))),g.or(...[0,2,3,4,5,6,7,9,11,12,15,16,19,20,21,22,23,24,25,26,27,28,31,37,46,49,61,62,64,65,66].map(value=>g.eq(r.operation,value)))),g.or(g.not(partySource),g.and(g.not(g.eq(r.selector,63)),g.not(g.eq(r.planningCategory,3)))));
+      return g.and(tensionSupported,g.or(g.not(summon),g.and(populationContext,g.not(partySource),g.eq(source.id,target.id),g.not(isCounter))),g.or(g.le(target.defend,3),g.and(coverResolved,g.ge(target.defend,6),g.le(target.defend,8)),g.and(routingResolved,g.or(...[4,5,9].map(value=>g.eq(target.defend,value))))),g.or(g.and(routingResolved,g.not(allowTension)),g.eq(sourcePreparation[0],0),g.eq(r.operation,0)),g.or(g.eq(targetTension.high,0),g.and(g.eq(r.operation,1),g.or(...[0,1,2,4,7,8,9,10,11,12,13,14,18].map(value=>g.eq(r.additional,value)))),g.or(...[0,2,3,4,5,6,7,9,11,12,15,16,19,20,21,22,23,24,25,26,27,28,31,37,46,49,61,62,64,65,66].map(value=>g.eq(r.operation,value)))),g.or(g.not(partySource),g.and(g.not(g.eq(r.selector,63)),g.not(g.eq(r.planningCategory,3)))));
     },
     accuracyResistance(g,r,resistance){return resistance[2];},
     // matching02156118/02156270 zero the ordinary rate in scenario mode;
@@ -295,13 +297,14 @@ function buildTargetKernel(){
       const fixed=enemyPackedDamage(g,rng,r.damageId,g.and(hit,packed,g.not(partySource))),party=partyPackedDamage(g,rng,r,sourceMagic,sourcePackedScale,g.and(hit,packed,partySource)),base=g.where(packed,g.where(partySource,party,fixed.damage),p.damage);
       const columns=columnSelectorDamage(g,rng,r.selector,base,source.baseAttack,source.level,g.and(hit,g.not(packed))).damage,state=commonStateSelectorDamage(g,r.selector,base,{targetParty:target.party,targetSpecies:sourceWeapon[3],targetMetal,targetStatusBytes:rawModifiers.targetRawStatusBytes,targetKindsBytes:targetKinds}),command=commonCommandSelectorDamage(g,{selector:r.selector,fallback:base,sourceHp:source.hp,targetHp:target.hp,targetCount:criticalHitCount,sourcePresent:g.gt(source.hp,0),targetPresent,enabled:hit,priorScratch:g.constant(0)}),selected=g.where(command.supported,command.damage,g.where(state.supported,state.damage,columns));
       selectorScratchWritten=command.scratchWritten;selectorScratch=command.nextScratch;
+      const levelSelected=commonLevelSelectorDamage(g,rng,{selector:r.selector,level:source.level,fallback:selected,enabled:hit,levelAvailable:g.constant(true,'bool')});
       const vacuum=levelScaledSelectorDamage(g,rng,source.level,g.and(hit,g.eq(r.selector,43)));
       const criticalChoice=rng.bounded(g.and(hit,g.eq(r.selector,45)),2),criticalGate=g.and(hit,g.eq(r.selector,45),g.eq(criticalChoice,0)),criticalRange=rng.range(criticalGate,Math.fround(.95),Math.fround(1.05));
       selectedCritical=g.where(criticalGate,g.floor(g.mul(source.baseAttack,criticalRange)),0);
       // Selector63 is the exact enemy level branch at USA021da248. The
       // physical fallback above is still evaluated before these two draws.
       const burstGate=g.and(hit,g.eq(r.selector,63)),burstLevel=g.mul(g.mul(6,source.level),rng.range(burstGate,Math.fround(.9),1)),burstMinimum=g.mul(160,rng.range(burstGate,Math.fround(.9),Math.fround(1.1))),burst=g.floor(g.max(burstLevel,burstMinimum));
-      const selectedDamage=g.where(g.eq(r.selector,43),vacuum,g.where(g.eq(r.selector,45),selectedCritical,g.where(g.eq(r.selector,47),g.add(g.floor(g.mul(source.level,.25)),5),g.where(g.eq(r.selector,63),burst,selected))));
+      const selectedDamage=g.where(levelSelected.supported,levelSelected.damage,g.where(g.eq(r.selector,43),vacuum,g.where(g.eq(r.selector,45),selectedCritical,g.where(g.eq(r.selector,47),g.add(g.floor(g.mul(source.level,.25)),5),g.where(g.eq(r.selector,63),burst,selected)))));
       const ordinary=g.or(g.eq(r.id,1),g.eq(r.id,2)),decay=g.and(g.gt(r.targetDecayFlag,0),g.or(g.not(ordinary),g.and(partySource,sourceWideWeapon))),coefficient=g.op('Gather',[g.constant(COMMON_TARGET_DAMAGE_FALLOFF,'float32',[5]),g.cast(g.max(0,g.min(hitIndex,4)),'int32')],{axis:0},{shape:['N',1]}),decayed=g.where(decay,g.floor(g.mul(selectedDamage,coefficient)),selectedDamage),wrapped=g.sub(decayed,g.mul(g.floor(g.mul(decayed,1/65536)),65536));
       return{seed:rng.seed,position:rng.position,damage:wrapped};
     },
@@ -389,7 +392,8 @@ function buildTargetKernel(){
       updates.confusion=g.where(confusion,1,updates.confusion);updates.defend=g.where(confusion,0,updates.defend);status.a1_confusionDuration=g.where(confusion,3,status.a1_confusionDuration);status.a1_confusionRecovery=g.where(confusion,0,status.a1_confusionRecovery);
       // func_02088840/854 accepts every living actor, including an already
       // blinded one, and refreshes duration4/recovery0 without clearing tension.
-      blindApplied=g.and(hit,g.eq(r.operation,19),g.gt(target.hp,0));updates.blind=g.where(blindApplied,1,nextTarget.blind);legacyAux.a1_blindDuration=g.where(blindApplied,4,legacyAux.a1_blindDuration);legacyAux.a1_blindRecovery=g.where(blindApplied,0,legacyAux.a1_blindRecovery);
+      const additionalBlind=commonAdditionalBlind(g,rng,{enabled:g.and(p.active,g.eq(r.operation,1),g.eq(r.additional,18)),damage:internalDamage,present:targetPresent,dead:g.gt(rawBit(g,rawModifiers.targetRawStatusBytes,0),0),rawResistance:g.input('targetRawBlindResistance'),partySource:g.gt(source.party,0),partyChance:r.chanceMinimum,enemyChance:r.baseChance});
+      blindApplied=g.or(g.and(hit,g.eq(r.operation,19),g.gt(target.hp,0)),additionalBlind.applied);updates.blind=g.where(blindApplied,1,nextTarget.blind);legacyAux.a1_blindDuration=g.where(blindApplied,4,legacyAux.a1_blindDuration);legacyAux.a1_blindRecovery=g.where(blindApplied,0,legacyAux.a1_blindRecovery);
       const primaryCures=[['sleep',9],['paralysis',20],['confusion',27]].map(([field,operation])=>{
         const cured=g.and(hit,g.eq(r.operation,operation),g.gt(target[field],0));
         updates[field]=g.where(cured,0,updates[field]??nextTarget[field]);
@@ -424,7 +428,7 @@ function buildTargetKernel(){
     },
     extraOutputs(g,p){
       const dead=g.and(p.active,g.le(p.actors[1].hp,0));for(const key of COMMON_TENSION_FIELDS)targetTension[key]=g.where(dead,0,targetTension[key]);for(const j of[0,2])targetPreparation[j]=g.where(dead,0,targetPreparation[j]);
-      return{additionalMagicBarrierApplied:scalar(g,additionalMagicBarrier.applied),nextTargetAdditionalMagicBarrier:g.cat([additionalMagicBarrier.nextRank,additionalMagicBarrier.nextDuration,additionalMagicBarrier.nextRecovery]),populationSeed,populationPosition,populationInserted,weaponMpDrained, nextSourceLifecycleAux:g.cat(COMMON_AUX_FIELDS.slice(0,7).map(key=>sa[key])),nextTargetLifecycleAux:g.cat(COMMON_AUX_FIELDS.slice(0,7).map(key=>ta[key])),nextSourceTension:pack(g,COMMON_TENSION_FIELDS,sourceTension),nextTargetTension:pack(g,COMMON_TENSION_FIELDS,targetTension),nextSourcePreparation:g.cat(sourcePreparation),nextTargetPreparation:g.cat(targetPreparation),recoveryAmount:recovered,mpRecovered,drainedAmount:transferred,raiseResult,selectorDamage:selectedCritical,afterActionScratchWritten:scalar(g,selectorScratchWritten),afterActionScratch:selectorScratch,currentDefense:buffStat(g,p.actors[1].baseDefense,p.actors[1].defenseRank,'defense',true,p.actors[1].party),currentAgility:buffStat(g,p.actors[1].baseAgility,p.actors[1].agilityRank,'defense',true,p.actors[1].party),escaped:scalar(g,escaped),dispelApplied:scalar(g,dispelApplied),clearBladeDefenseFlag:scalar(g,clearBladeDefenseFlag),critical:g.cast(g.or(g.and(p.hit,g.eq(p.rule.selector,45),g.gt(selectedCritical,0)),p.critical??zero(g)),'float32')};
+      return{blindApplied:scalar(g,blindApplied),additionalMagicBarrierApplied:scalar(g,additionalMagicBarrier.applied),nextTargetAdditionalMagicBarrier:g.cat([additionalMagicBarrier.nextRank,additionalMagicBarrier.nextDuration,additionalMagicBarrier.nextRecovery]),populationSeed,populationPosition,populationInserted,weaponMpDrained, nextSourceLifecycleAux:g.cat(COMMON_AUX_FIELDS.slice(0,7).map(key=>sa[key])),nextTargetLifecycleAux:g.cat(COMMON_AUX_FIELDS.slice(0,7).map(key=>ta[key])),nextSourceTension:pack(g,COMMON_TENSION_FIELDS,sourceTension),nextTargetTension:pack(g,COMMON_TENSION_FIELDS,targetTension),nextSourcePreparation:g.cat(sourcePreparation),nextTargetPreparation:g.cat(targetPreparation),recoveryAmount:recovered,mpRecovered,drainedAmount:transferred,raiseResult,selectorDamage:selectedCritical,afterActionScratchWritten:scalar(g,selectorScratchWritten),afterActionScratch:selectorScratch,currentDefense:buffStat(g,p.actors[1].baseDefense,p.actors[1].defenseRank,'defense',true,p.actors[1].party),currentAgility:buffStat(g,p.actors[1].baseAgility,p.actors[1].agilityRank,'defense',true,p.actors[1].party),escaped:scalar(g,escaped),dispelApplied:scalar(g,dispelApplied),clearBladeDefenseFlag:scalar(g,clearBladeDefenseFlag),critical:g.cast(g.or(g.and(p.hit,g.eq(p.rule.selector,45),g.gt(selectedCritical,0)),p.critical??zero(g)),'float32')};
     }
   });
 }
@@ -463,6 +467,7 @@ export function buildCommonTargetEffect(){
   const sourceAux=g.split(x.sourceAux,21),targetAux=g.split(x.targetAux,21),res=commonEffectResistancePercentages(g,{rawResistances:g.split(x.resistances,22),rawFlagsBytes:g.split(x.targetRawFlagsBytes,4),statusKindsBytes:g.split(x.targetStatusKindsBytes,2),present:x.targetPresent}),element=lookup(g,x.actionId,'effectElement'),damageElement=lookup(g,x.actionId,'damageElement'),byElement=id=>res.reduce((v,column,i)=>g.where(g.eq(id,i+1),column,v),g.constant(100));
   const originalAction=g.where(g.gt(x.originalActionId,0),x.originalActionId,x.actionId),feeds={...x,originalActionId:originalAction,actors:g.cat([x.sourceActor,x.targetActor]),aux:g.cat([g.add(g.mul(sourceAux[0],0),g.constant(Array(7).fill(0),'float32',[1,7])),...sourceAux.slice(7),...targetAux.slice(7)]),status:g.cat([x.sourceStatus,x.targetStatus]),wakeSkip:g.cat([x.sourceWakeSkip,x.targetWakeSkip]),config:x.sourceConfig,sourceIndex:g.mul(sourceAux[0],0),resistances:g.cat([res[18],res[19],byElement(element),res[15],byElement(damageElement)]),targetRawPoisonResistance:g.split(x.resistances,22)[15],targetRawSleepResistance:g.split(x.resistances,22)[9],targetRawConfusionResistance:g.split(x.resistances,22)[12],targetRawAttackResistance:g.split(x.resistances,22)[17],targetRawDefenseResistance:g.split(x.resistances,22)[18],targetElementResistances:g.cat(res.slice(0,7)),targetRawElementResistances:g.cat(g.split(x.resistances,22).slice(0,7))};
   feeds.targetRawMagicBarrierResistance=g.split(x.resistances,22)[20];
+  feeds.targetRawBlindResistance=g.split(x.resistances,22)[8];
   const out=g.inline(kernel,feeds,'effect'),aa=g.split(out.nextActors,66),ax=g.split(out.nextAux,35),st=g.split(out.nextStatus,14),wake=g.split(out.nextWakeSkip,2),sourceLife=g.split(out.nextSourceLifecycleAux,7),targetLife=g.split(out.nextTargetLifecycleAux,7),same=g.and(x.targetPresent,g.eq(aa[32],aa[65]));
   let sourceActor=g.cat(aa.slice(0,33)),targetActor=g.cat(aa.slice(33));
   // For self effects target mutation wins; MP was already paid in begin and
@@ -475,6 +480,7 @@ export function buildCommonTargetEffect(){
   values.weaponMpDrained=out.weaponMpDrained;
   for(const key of['selectorDamage','afterActionScratchWritten','afterActionScratch','currentDefense','currentAgility','populationSeed','populationPosition','populationInserted'])values[key]=out[key];
   values.accuracyPassed=out.accuracyPassed;
+  values.cameraFlagsB=out.cameraFlagsB;
   const tensionBefore=g.split(x.sourceTension,3);values.tensionUsed=scalar(g,g.and(g.gt(out.active,0),x.allowTension,g.gt(lookup(g,x.actionId,'tensionFlag'),0),g.or(g.gt(tensionBefore[1],0),g.gt(tensionBefore[2],0))));
   for(const key of['dodged','guarded','blindMiss','operationHit'])values[key]=out[key];
   const originalSource=g.where(g.ge(x.originalSourceId,0),x.originalSourceId,aa[32]),died=g.and(g.gt(out.active,0),g.le(aa[33],0)),history=g.split(g.where(died,g.constant([-1,-1],'float32',[1,2]),x.targetHistory),2),partyToEnemy=g.and(g.gt(out.active,0),g.ge(originalSource,0),g.le(originalSource,3),g.eq(aa[50],0)),nextHistory=g.where(partyToEnemy,g.cat([originalSource,history[0]]),g.cat(history)),mark=g.and(partyToEnemy,g.eq(lookup(g,originalAction,'planningCategory'),2)),half=g.floor(g.mul(x.targetState3c,.5)),oldBit=g.sub(half,g.mul(g.floor(g.mul(half,.5)),2)),nextState3c=g.where(mark,g.add(x.targetState3c,g.mul(g.sub(1,oldBit),2)),x.targetState3c);
@@ -521,7 +527,7 @@ export function buildCommonTargetEffect(){
   for(const[field,bit]of Object.entries({doubleGuard:0,acrobat:10}))rawOverlay(g,rawFlags,bit,scalar(g,g.gt(target[field],0)));rawOverlay(g,rawFlags,12,targetLife[3]);
   rawOverlay(g,rawFlags,5,g.where(g.gt(out.clearBladeDefenseFlag,0),0,rawBit(g,rawFlags,5)));
   for(const[value,start,width]of[[targetStatus[0],0,2],[targetPreparation[2],2,4],[targetPreparation[0],12,2]])for(let i=0;i<width;i++)rawOverlay(g,rawKinds,start+i,rawBit(g,[value],i));
-  const blindChanged=g.and(g.gt(out.effectApplied,0),g.eq(lookup(g,x.actionId,'operation'),19)),blindKind=lookup(g,x.actionId,'parameter');
+  const blindChanged=g.gt(out.blindApplied,0),blindKind=g.where(g.eq(lookup(g,x.actionId,'additional'),18),lookup(g,x.actionId,'secondaryParameter'),lookup(g,x.actionId,'parameter'));
   for(let i=0;i<3;i++)rawOverlay(g,rawKinds,6+i,g.where(blindChanged,rawBit(g,[blindKind],i),rawBit(g,rawKinds,6+i)));
   const deathBytes=[g.add(1,g.mul(rawBit(g,oldStatus,2),4)),g.constant(0),g.constant(0),g.constant(0)],deadKinds=rawMask(g,oldKinds,[0,128]);
   for(let i=0;i<4;i++){rawStatus[i]=g.where(didEscape,0,g.where(died,deathBytes[i],rawStatus[i]));rawFlags[i]=g.where(didEscape,i===1?32:0,g.where(died,0,rawFlags[i]));}
@@ -537,6 +543,7 @@ export function buildCommonTargetEffect(){
   g.contract.partyPacked='JPN021e8458: party magic/mending interpolation truncates the slope product before spread; no scaling consumes range then spread. Six original special stat rows are encoded as data at JPN021ff082. sourcePackedScale holds raw party auxiliary word0/word4 low10, independent of actor attack. Enemy base0 consumes one spread draw. Critical actions1/219/505 use attack*.95..1.05; other eligible actions use signed16(rawBase)*1.5..2.0 before shared multipliers.';
   g.contract.stateSelectors=COMMON_STATE_SELECTOR_RULES;
   g.contract.additionalRanks=COMMON_ADDITIONAL_RANK_AUTHORITY;
+  g.contract.additionalBlind=COMMON_ADDITIONAL_BLIND_AUTHORITY;
   g.contract.additionalTension=COMMON_TENSION_REDUCTION_AUTHORITY;
   g.contract.additionalDispel={body:'JPN021e4584 / matching021e3cec',clear:'JPN021eb028 / matching021ea85c',order:'Operation1 invokes additional12 before primary HP application regardless of accuracy/guard/zero damage. The same original176-byte dispel mask and stat-rank recomputation are used; the body itself draws no RNG.'};
   g.contract.additionalParalysis='Matching021e3a34: additional11 checks positive damage, target presence, resistance/species eligibility and living/non-high-tension state before bounded100. Party chance is word14 bits7..13, enemy chance bits0..6; critical overrides only the chance. Row82 requires enemy species9 with25% chance, row88 metal uses12.5%. Success refreshes duration3/recovery0 and clears sleep, confusion, skip, ordinary defend, low tension and flags18 bit5. The original setter also clears that flag for direct sleep/paralysis.';

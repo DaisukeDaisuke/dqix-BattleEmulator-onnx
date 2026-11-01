@@ -30,10 +30,11 @@ export function cameraMapOperations(g){
   return {neighbors,at,write,paint};
 }
 
-export async function buildFallbackGoal(){
+export async function buildFallbackGoal({capacity=4}={}){
+  if(![4,12].includes(capacity))throw Error("Fallback row capacity must be4 or12");
   const files=['src/Combat/Overlay_25/func_ov025_021e1d54.cpp','src/Combat/Overlay_25/func_ov025_021e169c.cpp','src/Combat/Overlay_25/func_ov025_021e13e0.cpp','src/Combat/Overlay_25/func_ov025_021e12f8.cpp','src/Combat/Overlay_0/func_ov000_0216f82c.cpp','src/Combat/Main/func_020493a4.cpp','src/Combat/Main/func_020493b8.cpp','src/Combat/Main/func_020493ec.cpp'];
   const occupancy=Array.from({length:81},(_,i)=>i%18===17?255:i===40?242:0);
-  const g=new Graph('rom-camera-fallback-goal',{
+  const g=new Graph(capacity===4?'rom-camera-fallback-goal':'rom-camera-fallback-goal'+capacity,{
     authority:{matchingCommit,address:'overlay25:0x021e2664',restore:'0x021e1cf0',paint:'0x021e1c08',neighbors:'overlay0:0x02170f58',sourceNamesAreUSAAddresses:true,sources:await sourceInfo(files)},
     scope:'One complete fallback goal consumer JPN021e2664 for a nonnull roster row/actor, starting node0..80 and byte auxiliary node. Includes ordered 6x6 candidate search, strict first-increasing-count choice of the INNER neighbor, clearing actor-class cells, restoring start/auxiliary footprint and exact post-order depth0..3 paint with hold0. Row+4 comes from an explicit correlated observed four-row snapshot; no producer or timing is invented.',
     scopeJa:'観測済みrow+4と占有81セルから代替目標を決め、元のクラス消去・足元復元・深さ3までの占有更新を順序どおり行います。row+4の生成時期と全カメラ制御は外部入力です。',
@@ -41,15 +42,16 @@ export async function buildFallbackGoal(){
     row4Contract:'observedRow4Bytes is four complete physical u32 words, 16 little-endian byte limbs, from one correlated observation/profile. rosterRow selects0..3 only. Do not enumerate independent16 masks, infer a producer from an action ID, or extrapolate these four rows to unobserved rows. Synthetic isolated ROM boundary fixtures, if present, must be labeled separately from natural observations.',
     row4Observations:{repository:observedStack.repository,commit:observedStack.commit,sources:observedStack.sources,rowBase:observedStack.rowBase,rowStride:observedStack.rowStride,fieldOffset:observedStack.fieldOffset,defaultSample:0,defaultSampleProvenance:observedStack.samples[0]},
     paintContract:'descriptorDepth is (descriptor.word10<<1)>>>30 and is effective only when actor flag0x400 and descriptor pointer are present. Auxiliary255 is passed to the actual byte-neighbor helper and may wrap to nodes7/8/0; it is not globally replaced with an empty neighborhood. Depth-first recursion checks occupancy before recursion and writes after recursion.',
-    defaults:{occupancy,actor:[242,40,40,255,0],observedRow4Bytes:row4Bytes(observedStack.samples[0].words),rosterRow:0,flag400:false,descriptorPresent:false,enabled:true},
+    defaults:{occupancy,actor:[242,40,40,255,0],observedRow4Bytes:capacity===4?row4Bytes(observedStack.samples[0].words):Array(capacity*4).fill(0),rosterRow:0,flag400:false,descriptorPresent:false,enabled:true},
     defaultProfile:'Isolated occupancy example using the exact correlated four-word natural stack sample0. The occupancy/actor example is numeric, not claimed to be the full state of that observed battle.',
     labels:{occupancy:'占有81セル（242以上は障害）',actor:'class / start / aux / goal / descriptor depth',observedRow4Bytes:'同一観測の4行分row+4（LE16bytes）',rosterRow:'観測4行の選択index',flag400:'actor header bit0x400',descriptorPresent:'actor+148 descriptorが存在',enabled:'fallback入口を実行'},
-    inputDomains:{occupancy:integer(0,255,81),observedRow4Bytes:integer(0,255,16),rosterRow:integer(0,3)},
+    inputDomains:{occupancy:integer(0,255,81),observedRow4Bytes:integer(0,255,capacity*4),rosterRow:integer(0,capacity-1)},
     fieldDomains:{actor:[{name:'class',...integer(0,255)},{name:'startNode',...integer(0,80)},{name:'auxiliaryNode',...integer(0,255)},{name:'goalNode',...integer(0,255)},{name:'descriptorDepth',...integer(0,3)}]},
     feedback:{occupancy:'nextOccupancy'},defaultSteps:1,
     unsupported:'No actor/object lookup, full AssignGoal, occupancy rebuild for the whole roster, row+4 producer/timing, route planning or presentation-program dispatch. Non-null row/actor and start0..80 are the direct-call boundary; arbitrary start bytes may cause out-of-map ROM reads and are excluded.'
   });
-  const initial=g.input('occupancy',['N',81]),a=g.split(g.input('actor',['N',5]),5),rowBytes=g.input('observedRow4Bytes',['N',16]),row=g.input('rosterRow'),flag=g.input('flag400',['N',1],'bool'),descriptor=g.input('descriptorPresent',['N',1],'bool'),enabled=g.input('enabled',['N',1],'bool');
+  if(capacity===12){g.contract.scope='Complete common fallback goal calculation for any of the original twelve compact roster rows and every externally supplied uint32 row+4 value.';g.contract.scopeJa='12行の任意の対象について、外部入力row+4を使い共通の代替目標計算を実行します。';g.contract.row4Contract='Four little-endian bytes per actual input row, all uint32 bit patterns. Nonexistent padding rows are unused. No observation profile or generated stack residue is substituted for an external candidate.';delete g.contract.row4Observations;g.contract.defaultProfile='Zero example limbs are disabled-lane tensor padding, never a runtime uncertainty default.';g.contract.labels.observedRow4Bytes='外部row+4値のLE48byteテンソル';g.contract.labels.rosterRow='実在するcompact row index0..11';}
+  const initial=g.input('occupancy',['N',81]),a=g.split(g.input('actor',['N',5]),5),rowBytes=g.input('observedRow4Bytes',['N',capacity*4]),row=g.input('rosterRow'),flag=g.input('flag400',['N',1],'bool'),descriptor=g.input('descriptorPresent',['N',1],'bool'),enabled=g.input('enabled',['N',1],'bool');
   const op=cameraMapOperations(g),picked=[];
   for(let i=0;i<4;i++)picked.push(g.op('GatherElements',[rowBytes,g.cast(g.add(g.mul(row,4),i),'int32')],{axis:1},{shape:['N',1]}));
   const rowNonzero=g.gt(picked.reduce((x,y)=>g.add(x,y)),0),neighbors=op.neighbors(a[1]);

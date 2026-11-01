@@ -196,15 +196,20 @@ export function buildCommonPostStatus(){
   const skipClear=g.and(active,g.gt(preparation.incapacitatedThisAction,0));actor.skip=g.where(skipClear,0,actor.skip);
   preparation.skipKind=g.where(skipClear,0,preparation.skipKind);
   preparation.pendingRecoveryMessage=g.where(skipClear,1,preparation.pendingRecoveryMessage);
+  const angerBefore=aux.anger;
   aux=advanceAnger(g,aux,{enabled:active,targetValid,sharedRoll:shared});
+  let cameraRecoveryEvent=g.and(active,g.gt(angerBefore,0),g.eq(aux.anger,0));
   const recoveryOrder=new Map(statusRules.expirations.map((rule,index)=>[rule.counter,index])),recoveryRules=[...ACTION_STATUSES,...COMMON_MODIFIER_RULES];
   for(const rule of recoveryRules)if(!recoveryOrder.has(rule.recoveryOffset))throw Error('Missing original recovery order for '+rule.field);
   for(const rule of recoveryRules.sort((a,b)=>recoveryOrder.get(a.recoveryOffset)-recoveryOrder.get(b.recoveryOffset))){
     if(rule.timerIndex!==undefined){
       const i=rule.timerIndex+1,gate=g.and(active,g.gt(commonRawBit(g,raw[rule.flag],rule.bit),0),g.gt(raw.rawTimers[i],0)),remaining=g.max(g.sub(raw.rawTimers[i],1),0),clear=g.and(gate,g.lt(rng.bounded(gate,100),lookup(g,remaining,rule.thresholds)));
+      const forceKind=rule.field==='force'?g.add(commonRawBit(g,raw.statusKindsBytes,9),g.add(g.mul(commonRawBit(g,raw.statusKindsBytes,10),2),g.mul(commonRawBit(g,raw.statusKindsBytes,11),4))):null;
+      cameraRecoveryEvent=g.or(cameraRecoveryEvent,rule.field==='force'?g.and(clear,g.ge(forceKind,1),g.le(forceKind,5)):clear);
       raw.rawTimers[i]=g.where(gate,remaining,raw.rawTimers[i]);clearCommonModifier(g,raw,rule,clear);
     }else{
       const rk=rule.field+'Recovery',dk=rule.field+'Duration',gate=g.and(active,g.not(g.eq(actor[rule.field],0)),g.gt(aux[rk],0)),remaining=g.max(g.sub(aux[rk],1),0),clear=g.and(gate,g.lt(rng.bounded(gate,100),lookup(g,remaining,rule.thresholds)));
+      cameraRecoveryEvent=g.or(cameraRecoveryEvent,clear);
       actor[rule.field]=g.where(clear,0,actor[rule.field]);aux[rk]=g.where(clear,0,g.where(gate,remaining,aux[rk]));aux[dk]=g.where(clear,0,aux[dk]);
       if(rule.field==='doubleGuard'||rule.field==='doubleDodge'){
         const index=rule.field==='doubleGuard'?8:9;raw.rawRanks[index]=g.where(clear,0,raw.rawRanks[index]);
@@ -233,7 +238,7 @@ export function buildCommonPostStatus(){
   for(let bit=0;bit<4;bit++)commonRawOverlay(g,raw.statusKindsBytes,bit+2,commonRawBit(g,[preparation.skipKind],bit));
   randomOutputs(g,rng,position);g.output(pack(g,ACTOR_FIELDS,actor),'nextActor');g.output(pack(g,COMMON_AUX_FIELDS,aux),'nextAux');g.output(pack(g,COMMON_STATUS_FIELDS,status),'nextStatus');
   for(const[key,name]of Object.entries({rawStatusBytes:'nextRawStatusBytes',rawFlagsBytes:'nextRawFlagBytes',rawRanks:'nextRawRanks',statusKindsBytes:'nextStatusKindsBytes',rawTimers:'nextRawTimers'}))g.output(g.cat(raw[key]),name);
-  g.output(pack(g,COMMON_PREPARATION_FIELDS,preparation),'nextPreparation');g.output(active,'active');return g;
+  g.output(pack(g,COMMON_PREPARATION_FIELDS,preparation),'nextPreparation');g.output(cameraRecoveryEvent,'cameraRecoveryEvent');g.output(active,'active');return g;
 }
 
 const deathFields=['attackRank','defenseRank','agilityRank','blind','sleep','confusion','paralysis','skip','defend','acrobat','doubleDodge','doubleGuard','hpRegen','hpDuration','hpRecovery','mpRegen','mpDuration','mpRecovery','poison'];

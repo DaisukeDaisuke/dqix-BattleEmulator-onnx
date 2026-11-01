@@ -91,6 +91,10 @@ export function buildBossActionCore(options={}){
   if(options.afterMinimumDamage)internal=options.afterMinimumDamage(g,rng,internal,rule,minimumContext);
   if(options.beforeComboDamage)internal=options.beforeComboDamage(g,internal,rule,{source,target,sourceIndex,partySource,active,hit});
   const comboDamageGate=options.fullPostprocessOnBlocked?g.and(hit,g.ge(internal,1),g.gt(rule.combo,0)):g.and(hit,g.not(blocked),g.ge(internal,1),g.gt(rule.combo,0));
+  // The command header is written inside the postprocessor, before the
+  // caller clears a dodged/guarded result and before combo state is reset.
+  // Keep this computed projection separate from final HP damage.
+  const cameraFlagsB=options.commandHeaderMetadata?g.where(comboDamageGate,g.mul(g.min(combo[1],3),32),8):null;
   const keepCombo=options.fullPostprocessOnBlocked?g.and(comboDamageGate,g.not(blocked)):comboDamageGate;internal=g.where(comboDamageGate,g.mul(internal,lookup(g,g.min(combo[1],3),COMBO_MULTIPLIERS)),internal);internal=g.where(hit,g.floor(internal),0);
   if(options.finalDamage)internal=options.finalDamage(g,internal,rule,{source,target,actionId,partySource,hit,critical});
   const postprocessedDamage=internal;
@@ -147,6 +151,7 @@ export function buildBossActionCore(options={}){
   const output={nextSeed:rng.seed,nextPosition:rng.position,nextActors:pack(g,actors),nextAux:g.cat(AUX_FIELDS.map(k=>aux[k])),nextStatus:g.cat(BOSS_STATUS_FIELDS.map(k=>status[k])),nextWakeSkip:g.cat(wakeSkip),nextCombo:g.cat(combo),nextContext,comboSide:combo[0],comboCount:combo[1],comboAction:combo[2],comboTarget:combo[3],damage,internalDamage:internal,consumed:g.sub(rng.position,position),active:g.cast(active,'float32'),supported:g.cast(supported,'float32'),critical:g.cast(critical,'float32'),accuracyPassed:g.cast(hit,'float32'),effectApplied:g.cast(g.or(g.and(operationHit,g.eq(rule.operation,1)),rankDefense,rankAgility,asleep),'float32'),poisoned:g.cast(poisoned,'float32'),charged:g.cast(g.or(hitCharge,actionCharge),'float32'),angerActivated:g.cast(g.or(hpAnger,critAnger),'float32')};
   if(additionalTargetEffect?.applied)output.effectApplied=g.cast(g.or(g.gt(output.effectApplied,0),additionalTargetEffect.applied),'float32');
   if(options.exposeHitResults)for(const[name,value]of Object.entries({dodged:dodge,guarded:guard,blindMiss,operationHit}))output[name]=g.cast(value,'float32');
+  if(options.commandHeaderMetadata)output.cameraFlagsB=cameraFlagsB;
   if(options.extraOutputs)Object.assign(output,options.extraOutputs(g,{actors,before,active,supported,hit,critical,damage,internalDamage:internal,postprocessedDamage,sourceIndex,partySource,source,target,rule,additionalTargetEffect}));
   for(const [name,value]of Object.entries(output))g.output(value,name);
   return g;

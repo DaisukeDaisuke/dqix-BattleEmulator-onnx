@@ -7,10 +7,8 @@ import {buildGraphs} from './build-graphs.mjs';
 import {buildHtml} from './build-html.mjs';
 import {buildModelBundles} from './build-model-bundles.mjs';
 import {ENCOUNTER_DEFINITIONS,BATTLE_DEFINITIONS,makeEncounterInput} from '../data/common-battle.mjs';
-import {COMMON_PRESENTATION_EXAMPLE} from '../data/common-presentation-example.mjs';
-import {COMMON_FUNCTIONAL_FRAME_EXAMPLE} from '../data/common-functional-frame-example.mjs';
-import {COMMON_SCRIPT_FRAME_EXAMPLE} from '../data/common-script-frame-example.mjs';
-import {CAMERA_MODES} from '../data/camera-modes.mjs';
+import {COMMON_BATTLE_CAMERA_EXAMPLE} from '../data/common-battle-camera-example.mjs';
+import {CAMERA_EXPLICIT_CPU_MODELS} from '../graph-v2/camera-enclosing-phase-runner.mjs';
 import {ACTOR_FIELDS} from '../graph-v2/rules.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
@@ -36,7 +34,7 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
   // This directory contains generated output only; source paths are never removed.
   await rm(out,{recursive:true,force:true});await mkdir(out,{recursive:true});
   const models=new Map(),publicNames=new Set(PUBLIC_MODELS);
-  const explicitCpu=new Set(CAMERA_MODES.flatMap(mode=>mode.explicitCpuModels??[]));
+  const explicitCpu=new Set(CAMERA_EXPLICIT_CPU_MODELS),cameras=[];
   async function loadModel(irPath,onnxPath,expectedHash){
     const ir=await json(irPath),onnx=await readFile(onnxPath),sha256=hash(onnx);
     const supportedSchema=ir.schema==='dq9-graph-ir-v2'||ir.schema==='dq9-cpu-double-graph-ir-v1'&&explicitCpu.has(ir.name);
@@ -50,11 +48,8 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
   if(!Array.isArray(commonProgram.modules)||!commonProgram.modules.length)throw Error('The shared battle program has no modules');
   for(const module of commonProgram.modules)await loadModel(resolve(dirname(programPath),module.ir),resolve(dirname(programPath),module.onnx),module.sha256);
   const commonProgramHash=hash(JSON.stringify(commonProgram));
-  const encounters=ENCOUNTER_DEFINITIONS.map(definition=>({id:definition.id,titleJa:definition.titleJa??definition.name??String(definition.id),scopeJa:definition.scopeJa??'',inputs:makeEncounterInput(definition.id)}));
-  encounters.push(structuredClone(COMMON_PRESENTATION_EXAMPLE));
-  encounters.push(structuredClone(COMMON_FUNCTIONAL_FRAME_EXAMPLE));
-  encounters.push(structuredClone(COMMON_SCRIPT_FRAME_EXAMPLE));
-  const required=new Set([...publicNames,...CAMERA_MODES.flatMap(mode=>mode.models)]);
+  const encounters=[structuredClone(COMMON_BATTLE_CAMERA_EXAMPLE),...ENCOUNTER_DEFINITIONS.map(definition=>({id:definition.id,titleJa:definition.titleJa??definition.name??String(definition.id),scopeJa:definition.scopeJa??'',inputs:makeEncounterInput(definition.id)}))];
+  const required=new Set(publicNames);
   for(const name of required){
     if(models.has(name))continue;
     let found=false;
@@ -79,15 +74,15 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
   await writeFile(join(out,'data/definitions.json'),JSON.stringify(BATTLE_DEFINITIONS)+'\n');
   await writeFile(join(out,'data/encounters.json'),JSON.stringify(encounters,null,2)+'\n');
   await writeFile(join(out,'data/action-coverage.json'),JSON.stringify(actionCoverage,null,2)+'\n');
-  const html=await buildHtml({root,out,models:ordered,commonProgram,definitions:BATTLE_DEFINITIONS,encounters,actionCoverage,cameras:CAMERA_MODES,actorFields:ACTOR_FIELDS});
-  const coverage={battlePrograms:1,bossSpecificPrograms:false,commonProgramHash,encounterInputs:encounters.length,cameraModes:CAMERA_MODES.length,publicPrimitiveGraphs:PUBLIC_MODELS.length,totalGraphs:ordered.length,seedFiltering:false,learnedApproximation:false,implicitCpuFallback:false,fullGameComplete:false,authority:'Original ROM execution and matching decompile; previous emulator is an independent comparator.',limitations:['An encounter is input data, not a separately verified battle. Definition counts do not claim full action-effect or whole-game coverage.','Unsupported effects, controls and camera state are reported in the execution result rather than replaced with approximations.','Turn/transition budget exhaustion preserves the unfinished state and is never counted as a win or loss.','WASM is the default. Optional WebGPU is strict with no CPU fallback, apart from separately declared DOUBLE models executed by standalone WASM. Adapter identity and actual provider counts are reported; hardware speedup is not inferred.']};
+  const html=await buildHtml({root,out,models:ordered,commonProgram,definitions:BATTLE_DEFINITIONS,encounters,actionCoverage,cameras,actorFields:ACTOR_FIELDS});
+  const coverage={battlePrograms:1,bossSpecificPrograms:false,commonProgramHash,encounterInputs:encounters.length,cameraModes:1,publicPrimitiveGraphs:PUBLIC_MODELS.length,totalGraphs:ordered.length,runtimeRomRequired:false,observationsFilterOnly:true,allSurvivorsRetained:true,learnedApproximation:false,implicitCpuFallback:false,fullGameComplete:false,authority:'Original ROM execution and matching decompile; previous emulator is an independent comparator.',limitations:['An encounter is input data, not a separately verified battle. Numeric and camera command coverage are reported separately.','Every declared row+4 candidate remains in an exact lazy domain; an explicit execution budget does not narrow the search. Unknown or unsupported results remain blocked.','Observed values only filter computed snapshots. Every consistent branch retains its own computed RNG, battle, world and camera memory.','WASM is the default. Optional WebGPU is strict with no CPU fallback, apart from separately declared DOUBLE models executed by standalone WASM. Actual provider counts are reported; hardware speedup is not inferred.']};
   const runtimeIndex={schema:'dq9-runtime-index-v3',coverage,
     models:bundled.models,bundles:bundled.bundles,
     delivery:{format:'dq9-onnx-bundle-v1',modelDownloadRequests:bundled.modelRequests,independentOnnxModels:ordered.length,modelBytesUnchanged:true,standaloneHtmlModelRequests:0,loader:'runtime/model-bundle.mjs'},
     commonProgram:{id:'common-battle',programHash:commonProgramHash,path:'programs/common-battle.json',moduleHashes:Object.fromEntries(commonProgram.modules.map(module=>[module.name,module.sha256]))},
     definitions:'data/definitions.json',actionCoverage:'data/action-coverage.json',
     encounters:encounters.map(({id,titleJa})=>({id,titleJa,programHash:commonProgramHash,program:'common-battle'})),
-    encounterInputs:'data/encounters.json',cameras:CAMERA_MODES,html:'dq9-battle-emulator.html'};
+    encounterInputs:'data/encounters.json',cameras,html:'dq9-battle-emulator.html'};
   await writeFile(join(out,'runtime-index.json'),JSON.stringify(runtimeIndex,null,2)+'\n');
   await copyFile(join(root,'README.md'),join(out,'README.md'));
   await copyFile(join(root,'LICENSE'),join(out,'LICENSE'));

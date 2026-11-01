@@ -10,10 +10,8 @@ const roots=[
   'web/input-validation.mjs',
   'web/graph-executor.mjs',
   'runtime/common-battle.mjs',
-  'runtime/common-presentation.mjs',
-  'runtime/common-presentation-frame.mjs',
-  'runtime/common-functional-presentation.mjs',
-  'runtime/common-rom-assets.mjs'
+  'runtime/common-battle-camera.mjs',
+  'runtime/common-battle-search.mjs'
 ];
 
 function initialGraphInput(ir){
@@ -51,7 +49,7 @@ export async function buildHtml({root,out,models,commonProgram,definitions,encou
   root=resolve(root);out=resolve(out);
   if(!commonProgram?.modules?.length||!definitions||!Array.isArray(encounters)||!encounters.length)throw Error('Common battle program, definitions and encounters are required');
   const sourceHashes={},sources={},visiting=new Set();
-  for(const path of ['data/graph-inputs.mjs','data/common-battle.mjs','data/common-presentation-example.mjs','data/common-functional-frame-example.mjs','data/common-script-frame-example.mjs'])sourceHashes[path]=hash(await readFile(join(root,path)));
+  for(const path of ['data/graph-inputs.mjs','data/common-battle.mjs','data/common-battle-camera-example.mjs'])sourceHashes[path]=hash(await readFile(join(root,path)));
   async function source(path){
     path=path.replaceAll('\\','/');
     if(Object.hasOwn(sources,path))return;
@@ -92,9 +90,9 @@ export async function buildHtml({root,out,models,commonProgram,definitions,encou
   const ids=[...packedEncounters.map(x=>x.id),...cameras.map(x=>x.id),...packedModels.filter(x=>x.public).map(x=>x.name)];
   if(new Set(ids).size!==ids.length)throw Error('Duplicate browser mode ID');
   const commonProgramHash=hash(JSON.stringify(commonProgram));
-  const assets={schema:'dq9-source-release-html-v2',models:packedModels,commonProgram,commonProgramHash,definitions,encounters:packedEncounters,actionCoverage,cameras,actorFields,sources,sourceHashes,ortVersion:'1.31.1',policy:{seedFiltering:false,implicitCpuFallback:false,learnedApproximation:false,bossSpecificPrograms:false,fullGameComplete:false}};
-  const template=await readFile(join(root,'web/template.html'),'utf8'),app=await readFile(join(root,'web/app.mjs'),'utf8');
-  sourceHashes['web/template.html']=hash(template);sourceHashes['web/app.mjs']=hash(app);
+  const assets={schema:'dq9-source-release-html-v2',models:packedModels,commonProgram,commonProgramHash,definitions,encounters:packedEncounters,actionCoverage,cameras,actorFields,sources,sourceHashes,ortVersion:'1.31.1',policy:{runtimeRomRequired:false,observationsFilterOnly:true,allSurvivorsRetained:true,implicitCpuFallback:false,learnedApproximation:false,bossSpecificPrograms:false,fullGameComplete:false}};
+  const template=await readFile(join(root,'web/battle-template.html'),'utf8'),app=await readFile(join(root,'web/battle-app.mjs'),'utf8');
+  sourceHashes['web/battle-template.html']=hash(template);sourceHashes['web/battle-app.mjs']=hash(app);
   const compressed=gzipSync(Buffer.from(JSON.stringify(assets)));
   if(!template.includes('__DQ9_ASSETS__')||!template.includes('__DQ9_APP__'))throw Error('HTML template marker is missing');
   const html=template.replace('__DQ9_ASSETS__',compressed.toString('base64')).replace('__DQ9_APP__',app.replace(/<\/script/gi,'<\\/script'));

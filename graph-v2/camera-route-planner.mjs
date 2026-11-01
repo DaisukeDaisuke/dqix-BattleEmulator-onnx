@@ -7,6 +7,9 @@ const nextName=x=>`next${x[0].toUpperCase()+x.slice(1)}`;
 export async function createCameraRoutePlanner({runGraph,getModel,onTrace}={}){
   if(typeof runGraph!=='function'||typeof getModel!=='function')throw Error('runGraph and getModel required');
   const models=Object.fromEntries(await Promise.all(CAMERA_ROUTE_MODELS.map(async name=>[name,await getModel(name)])));
+  // Each of12 actors can accept at most15 moves. A final no-change pass
+  // consumes at most one full command traversal, plus the terminating check.
+  const commandCapacity=models['rom-camera-route-prepare'].inputs.find(x=>x.name==='actionActors').shape[1],maximumAttempts=181*commandCapacity+1;
   const defaults=name=>Object.fromEntries(Object.entries(models[name].contract.defaults).map(([k,v])=>[k,array(v)]));
   let graphCalls=0,pathMicrosteps=0;
   async function call(name,rows,phase){
@@ -22,8 +25,8 @@ export async function createCameraRoutePlanner({runGraph,getModel,onTrace}={}){
     });
     const outputs=await runGraph(name,inputs,{phase});graphCalls++;if(outputs.length!==rows.length)throw Error(`${name} changed batch lanes`);if(onTrace)await onTrace({phase,model:name,inputs,outputs});return outputs;
   }
-  async function run({rows,maxAttempts=10861}={}){
-    if(!Array.isArray(rows)||!rows.length)throw Error('A nonempty lane batch is required');if(!Number.isInteger(maxAttempts)||maxAttempts<1||maxAttempts>10861)throw Error('maxAttempts must be1..10861');
+  async function run({rows,maxAttempts=maximumAttempts}={}){
+    if(!Array.isArray(rows)||!rows.length)throw Error('A nonempty lane batch is required');if(!Number.isInteger(maxAttempts)||maxAttempts<1||maxAttempts>maximumAttempts)throw Error(`maxAttempts must be1..${maximumAttempts}`);
     graphCalls=0;pathMicrosteps=0;const initial=defaults(CAMERA_ROUTE_MODELS[0]),states=rows.map(row=>({...structuredClone(initial),...Object.fromEntries(Object.entries(row).map(([k,v])=>[k,array(v)]))}));let complete=false,attempts=0;
     for(;attempts<maxAttempts;attempts++){
       const prep=await call('rom-camera-route-prepare',states,`camera:route:prepare${attempts}`);

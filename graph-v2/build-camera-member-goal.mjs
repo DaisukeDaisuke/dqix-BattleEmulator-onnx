@@ -40,19 +40,21 @@ export async function buildCameraMapWrite(){
   const map=g.input('occupancy',['N',81]),node=g.input('node'),value=g.input('value'),enabled=g.input('enabled',['N',1],'bool');g.output(cameraMapOperations(g).write(map,node,value,enabled),'nextOccupancy');return g;
 }
 
-export async function buildCameraConflictUpdate(){
-  const g=new Graph('rom-camera-conflict-update',{
+export async function buildCameraConflictUpdate({capacity=4}={}){
+  if(![4,12].includes(capacity))throw Error("Conflict row-word capacity must be4 or12");
+  const g=new Graph(capacity===4?'rom-camera-conflict-update':'rom-camera-conflict-update'+capacity,{
     authority:await authority(['src/Combat/Overlay_25/func_ov025_021e1ff4.cpp','src/Combat/Overlay_25/func_ov025_021e1c20.cpp'],'overlay25:0x021e2904 / post-conflict0x021e2530'),
     scope:'Shared conflict writes from up to6 already selected neighbor nodes. Each valid node becomes255. For each nonexcluded roster actor, effective occupied node is auxiliary<81?auxiliary:start. A matching node writes row+4=u32(1) and auxiliary=255. Known writes are exposed separately for all12rows; only the initial four correlated raw words are carried as complete row+4 values.',
     scopeJa:'近傍の占有競合を更新します。ROMが実際に書くrow+4=1だけを計算し、未観測行の初期row+4は生成しません。',
-    defaults:{occupancy:Array(81).fill(0),selectedNodes:[31,32,39,41,49,50],roster:[0,0,255,192,40,255,...Array(10).fill([255,0,255]).flat()],rosterCount:2,excludedIds:[0,192],excludedPresent:[true,true],observedRow4Bytes:row4Bytes(observedStack.samples[0].words),enabled:true},
-    inputDomains:{occupancy:integer(0,255,81),selectedNodes:integer(0,255,6),roster:integer(0,255,36),rosterCount:integer(0,12),excludedIds:integer(0,255,2),observedRow4Bytes:integer(0,255,16)},
+    defaults:{occupancy:Array(81).fill(0),selectedNodes:[31,32,39,41,49,50],roster:[0,0,255,192,40,255,...Array(10).fill([255,0,255]).flat()],rosterCount:2,excludedIds:[0,192],excludedPresent:[true,true],observedRow4Bytes:capacity===4?row4Bytes(observedStack.samples[0].words):Array(capacity*4).fill(0),enabled:true},
+    inputDomains:{occupancy:integer(0,255,81),selectedNodes:integer(0,255,6),roster:integer(0,255,36),rosterCount:integer(0,12),excludedIds:integer(0,255,2),observedRow4Bytes:integer(0,255,capacity*4)},
     labels:{occupancy:'初期占有81セル',selectedNodes:'書込み近傍6byte（無効255）',roster:'12行のid/start/aux',rosterCount:'実在roster行数',excludedIds:'除外するactor ID2つ',excludedPresent:'各除外IDが有効',observedRow4Bytes:'同一観測の4word16bytes',enabled:'この競合更新を実行'},
     row4Contract:'The input16bytes must be one correlated four-row observation. writeRow4One is the documented deterministic writer effect, not an invented initial value. For rows4..11 with writeRow4One=false the raw row+4 value remains unknown/unrepresented. Existing unknown values are not zero-filled as state.',
     defaultProfile:'Isolated numeric roster using the exact complete correlated row+4 natural observation0. This is not asserted to be the whole battle state at that observation.',row4DefaultObservation:observedStack.samples[0],feedback:{occupancy:'nextOccupancy',observedRow4Bytes:'nextObservedRow4Bytes'},defaultSteps:1,
     equivalence:'Sequential repeated matches after auxiliary clearing cannot change the final effect: the first match already writes1 and255. A row with no initial effective-node match never changes. Thus one membership predicate per row preserves the exact final writes.'
   });
-  const map=g.input('occupancy',['N',81]),nodes=g.split(g.input('selectedNodes',['N',6]),6),roster=g.split(g.input('roster',['N',36]),36),count=g.input('rosterCount'),excluded=g.split(g.input('excludedIds',['N',2]),2),excludeOn=g.split(g.input('excludedPresent',['N',2],'bool'),2),raw=g.split(g.input('observedRow4Bytes',['N',16]),16),enabled=g.input('enabled',['N',1],'bool'),op=cameraMapOperations(g);
+  if(capacity===12){g.contract.scope='Common conflict update across all twelve roster rows. A matching nonexcluded row deterministically writes uint32(1) and auxiliary255; all other supplied words are retained bit exactly.';g.contract.scopeJa='12行の競合更新でrow+4への実書込みを計算し、他の外部入力値を全bit保持します。';g.contract.row4Contract='Every existing row is externally supplied. Inactive padding is unread; known updates are computed from the current occupancy and selected nodes, not introduced as fresh uncertainty.';g.contract.defaultProfile='Zero example limbs are disabled-lane tensor padding only.';delete g.contract.row4DefaultObservation;g.contract.labels.observedRow4Bytes='外部row+4値のLE48byteテンソル';}
+  const map=g.input('occupancy',['N',81]),nodes=g.split(g.input('selectedNodes',['N',6]),6),roster=g.split(g.input('roster',['N',36]),36),count=g.input('rosterCount'),excluded=g.split(g.input('excludedIds',['N',2]),2),excludeOn=g.split(g.input('excludedPresent',['N',2],'bool'),2),raw=g.split(g.input('observedRow4Bytes',['N',capacity*4]),capacity*4),enabled=g.input('enabled',['N',1],'bool'),op=cameraMapOperations(g);
   let next=map;for(const node of nodes)next=op.write(next,node,255,enabled);
   const changes=[],aux=[];
   for(let i=0;i<12;i++){
