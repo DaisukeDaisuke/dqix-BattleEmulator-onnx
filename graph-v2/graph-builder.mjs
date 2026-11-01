@@ -14,6 +14,9 @@ export class Graph {
   }
   op(op,inputs,attributes={},options={}){
     inputs=inputs.map(x=>typeof x==='number'?this.constant(x):x);
+    // ORT WebGPU does not implement Equal on BOOL tensors. Exact 0/1 casts
+    // retain all four truth-table cases and avoid an implicit CPU partition.
+    if(op==='Equal'&&inputs.every(name=>this.values[name].dtype==='bool'))inputs=inputs.map(name=>this.cast(name,'float32'));
     let shape=options.shape??inputs.reduce((s,x)=>broadcast(s,this.values[x].shape),[1]);
     let dtype=options.dtype??(op==='Cast'?Object.entries(TYPES).find(([,v])=>v===attributes.to)[0]:['Less','LessOrEqual','Greater','GreaterOrEqual','Equal','And','Or','Not'].includes(op)?'bool':op==='Where'?this.values[inputs[1]].dtype:this.values[inputs[0]].dtype);
     const name=options.name??`${op.toLowerCase()}_${this.index++}`;

@@ -4,7 +4,7 @@ export const CAMERA_PREPROCESS_MODELS=['rom-camera-preprocess-scan4','rom-camera
 const IDS=[0,1,2,3,192,193,194,195,196,197,198,199],pad=(a,n,v=0)=>[...a,...Array(n-a.length).fill(v)],clone=x=>structuredClone(x);
 function bytes(word){if(!Number.isInteger(word)||word<0||word>4294967295)throw Error('Exact u32 visual flags required');return Array.from({length:4},(_,i)=>Math.floor(word/2**(i*8))%256);}
 export function cameraPreprocessInitial(row){
- if(!Array.isArray(row.roster)||row.roster.length>4||!Array.isArray(row.commands)||row.commands.length>60)throw Error('Preprocess roster<=4/commands<=60 required');
+ if(!Array.isArray(row.roster)||row.roster.length>4||!Array.isArray(row.commands)||row.commands.length>72)throw Error('Preprocess roster<=4/commands<=72 required (72 is the original command arena capacity)');
  const ids=row.roster.map(r=>r.id);if(ids.some(x=>!IDS.includes(x))||new Set(ids).size!==ids.length)throw Error('Unique valid roster IDs required');
  for(const r of row.roster){for(const key of['position','routePositionXYZ','resetPositionXYZ'])if(!Array.isArray(r[key])||r[key].length!==3)throw Error(`Initial ${key}[3] required`);}
  for(const c of row.commands)if(!Array.isArray(c.participants)||c.participants.length>12||!Array.isArray(c.targets)||c.targets.length>12)throw Error('Raw command participant/target lists<=12 required');

@@ -8,31 +8,10 @@ import {validateModelInput} from '../web/input-validation.mjs';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const roots=[
   'web/input-validation.mjs',
-  'graph-v2/input-domains.mjs',
-  'poc-v2/graph-runtime.mjs',
-  'poc-v2/native-graph-wasm-prototype.mjs',
-  'poc-v2/native-resident-runtime-prototype.mjs',
-  'poc-v2/resident-runtime.mjs',
-  'poc-v2/constant-gather-resident-runtime.mjs',
-  'poc-v2/wide-literal-constant-gather-resident.mjs'
+  'web/graph-executor.mjs',
+  'runtime/common-battle.mjs',
+  'runtime/common-presentation.mjs'
 ];
-
-function setPath(object,path,value){
-  if(!Array.isArray(path)||!path.length)throw Error('Missing initial input path');
-  let target=object;
-  for(let i=0;i<path.length-1;i++)target=target[path[i]]??=(Number.isInteger(path[i+1])?[]:{});
-  target[path.at(-1)]=structuredClone(value);
-}
-
-function initialProgramInput(program){
-  const slots=new Map(program.slots.map(slot=>[slot.name,slot])),input={};
-  for(const name of Object.values(program.inputs)){
-    const slot=slots.get(name);
-    if(!slot||slot.initial?.kind!=='input'||slot.initial.default===undefined)throw Error('Program initial input missing: '+name);
-    setPath(input,slot.initial.path,slot.initial.default);
-  }
-  return input;
-}
 
 function initialGraphInput(ir){
   if(GRAPH_INITIAL_INPUTS[ir.name]){
@@ -65,10 +44,11 @@ function initialGraphInput(ir){
 // Rebuild the standalone document from source and freshly generated models.
 // No verification JSON, observed output, checkpoint or local absolute path is
 // needed by this builder or included in its generated browser assets.
-export async function buildHtml({root,out,models,programs,cameras=[],actorFields=[]}){
+export async function buildHtml({root,out,models,commonProgram,definitions,encounters,actionCoverage,cameras=[],actorFields=[]}){
   root=resolve(root);out=resolve(out);
+  if(!commonProgram?.modules?.length||!definitions||!Array.isArray(encounters)||!encounters.length)throw Error('Common battle program, definitions and encounters are required');
   const sourceHashes={},sources={},visiting=new Set();
-  sourceHashes['data/graph-inputs.mjs']=hash(await readFile(join(root,'data/graph-inputs.mjs')));
+  for(const path of ['data/graph-inputs.mjs','data/common-battle.mjs','data/common-presentation-example.mjs'])sourceHashes[path]=hash(await readFile(join(root,path)));
   async function source(path){
     path=path.replaceAll('\\','/');
     if(Object.hasOwn(sources,path))return;
@@ -92,25 +72,24 @@ export async function buildHtml({root,out,models,programs,cameras=[],actorFields
     const bytes=typeof model.onnx==='string'?Buffer.from(model.onnx,'base64'):Buffer.from(model.onnx);
     const sha256=hash(bytes);
     if(model.sha256&&model.sha256!==sha256)throw Error('Model hash changed: '+model.name);
-    const cpuExecutionProvider=model.executionProvider==='wasm-explicit-cpu'||model.ir.nodes.some(node=>node.op==='GatherElements')?'onnxruntime-wasm':'native-wasm';
-    return{name:model.name,onnx:bytes.toString('base64'),ir:model.ir,sha256,bytes:bytes.length,public:model.public===true,titleJa:model.titleJa??model.name,executionProvider:model.executionProvider??null,cpuExecutionProvider,defaultInput:model.public===true?initialGraphInput(model.ir):undefined};
+    return{name:model.name,onnx:bytes.toString('base64'),ir:model.ir,sha256,bytes:bytes.length,public:model.public===true,titleJa:model.titleJa??model.name,executionProvider:model.executionProvider??null,cpuExecutionProvider:'onnxruntime-wasm',defaultInput:model.public===true?initialGraphInput(model.ir):undefined};
   });
   const byName=new Map(packedModels.map(model=>[model.name,model]));
-  const packedPrograms=programs.map(definition=>{
-    for(const module of definition.program.modules){
-      if(byName.get(module.name)?.sha256!==module.sha256)throw Error('Program model binding differs: '+definition.id+'/'+module.name);
-    }
-    const presets=definition.presets?.length?structuredClone(definition.presets):[{id:'default',labelJa:'標準の初期条件',inputs:initialProgramInput(definition.program)}];
-    return{id:definition.id,titleJa:definition.titleJa??definition.id,program:definition.program,runtimeAdapter:definition.runtimeAdapter??null,presets,scopeJa:definition.scopeJa??definition.program.scope??''};
-  });
+  for(const module of commonProgram.modules)if(byName.get(module.name)?.sha256!==module.sha256)throw Error('Common program model binding differs: '+module.name);
+  const packedEncounters=structuredClone(encounters);
+  for(const encounter of packedEncounters){
+    if(!encounter.id||!encounter.inputs?.actors?.length)throw Error('Encounter initial actor data is missing: '+encounter.id);
+    if('program'in encounter||'sourcePath'in encounter||'runtimeAdapter'in encounter)throw Error('Encounter data must not select an execution program: '+encounter.id);
+  }
   for(const camera of cameras){
     if(!camera.presets?.length)throw Error('Camera initial input is absent: '+camera.id);
     for(const name of camera.models)if(!byName.has(name))throw Error('Camera model absent: '+name);
     for(const name of camera.explicitCpuModels??[])if(byName.get(name)?.executionProvider!=='wasm-explicit-cpu')throw Error('Camera CPU model must be declared: '+name);
   }
-  const ids=[...packedPrograms.map(x=>x.id),...cameras.map(x=>x.id),...packedModels.filter(x=>x.public).map(x=>x.name)];
+  const ids=[...packedEncounters.map(x=>x.id),...cameras.map(x=>x.id),...packedModels.filter(x=>x.public).map(x=>x.name)];
   if(new Set(ids).size!==ids.length)throw Error('Duplicate browser mode ID');
-  const assets={schema:'dq9-source-release-html-v1',models:packedModels,programs:packedPrograms,cameras,actorFields,sources,sourceHashes,ortVersion:'1.31.1',policy:{seedFiltering:false,implicitCpuFallback:false,learnedApproximation:false,fullGameComplete:false}};
+  const commonProgramHash=hash(JSON.stringify(commonProgram));
+  const assets={schema:'dq9-source-release-html-v2',models:packedModels,commonProgram,commonProgramHash,definitions,encounters:packedEncounters,actionCoverage,cameras,actorFields,sources,sourceHashes,ortVersion:'1.31.1',policy:{seedFiltering:false,implicitCpuFallback:false,learnedApproximation:false,bossSpecificPrograms:false,fullGameComplete:false}};
   const template=await readFile(join(root,'web/template.html'),'utf8'),app=await readFile(join(root,'web/app.mjs'),'utf8');
   sourceHashes['web/template.html']=hash(template);sourceHashes['web/app.mjs']=hash(app);
   const compressed=gzipSync(Buffer.from(JSON.stringify(assets)));
@@ -118,5 +97,5 @@ export async function buildHtml({root,out,models,programs,cameras=[],actorFields
   const html=template.replace('__DQ9_ASSETS__',compressed.toString('base64')).replace('__DQ9_APP__',app.replace(/<\/script/gi,'<\\/script'));
   const htmlPath=out.endsWith('.html')?out:join(out,'dq9-battle-emulator.html');
   await mkdir(dirname(htmlPath),{recursive:true});await writeFile(htmlPath,html,'utf8');
-  return{htmlPath,sha256:hash(html),bytes:Buffer.byteLength(html),compressedAssetsBytes:compressed.length,models:packedModels.length,programs:packedPrograms.length,cameras:cameras.length,publicGraphs:packedModels.filter(x=>x.public).length,sourceHashes,externalRuntime:{version:'1.31.1',purpose:'CPU-selected GatherElements models, and the explicitly declared float64 camera model for either selected backend',cpuModels:packedModels.filter(model=>model.cpuExecutionProvider==='onnxruntime-wasm').map(model=>model.name),implicitCpuFallback:false},temporaryDebugRecordsIncluded:false,originalRomImageIncluded:false};
+  return{htmlPath,sha256:hash(html),bytes:Buffer.byteLength(html),compressedAssetsBytes:compressed.length,models:packedModels.length,programs:1,commonProgramHash,encounters:packedEncounters.length,cameras:cameras.length,publicGraphs:packedModels.filter(x=>x.public).length,sourceHashes,externalRuntime:{version:'1.31.1',purpose:'WASM is the default provider. Optional strict WebGPU executes the same shared modules with CPU fallback disabled; declared DOUBLE camera modules use a separate standalone WASM runtime. Optional scalar-WASM comparison reports its shared ORT modules.',defaultProvider:'onnxruntime-wasm',optionalProvider:'onnxruntime-webgpu',cpuModels:packedModels.map(model=>model.name),explicitCpuModels:packedModels.filter(model=>model.executionProvider==='wasm-explicit-cpu').map(model=>model.name),implicitCpuFallback:false,hardwareAccelerationClaim:false},temporaryDebugRecordsIncluded:false,originalRomImageIncluded:false};
 }

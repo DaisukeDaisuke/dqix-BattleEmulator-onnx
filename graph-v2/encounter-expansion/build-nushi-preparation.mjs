@@ -6,7 +6,7 @@ import {ACTOR_FIELDS} from '../rules.mjs';
 import {AUX_FIELDS} from '../extended-rules.mjs';
 import {BOSS_STATUS_FIELDS,resistanceFraction} from '../boss-action-rules.mjs';
 import {extendedInputContract} from '../input-domains.mjs';
-import {APPEAL_FIELDS} from './build-appeal-program.mjs';
+import {APPEAL_FIELDS} from '../appeal-fields.mjs';
 import {makeNushiRow} from './nushi-profiles.mjs';
 import {NUSHI_ACTION_IDS,NUSHI_ACTION_RULES} from './build-nushi-action.mjs';
 import {readFile,writeFile,rename} from 'node:fs/promises';

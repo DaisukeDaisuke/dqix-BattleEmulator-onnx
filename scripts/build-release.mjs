@@ -5,45 +5,15 @@ import {resolve,dirname,join,relative,extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildGraphs} from './build-graphs.mjs';
 import {buildHtml} from './build-html.mjs';
-import {PROGRAM_DEFINITIONS,INPUT_PRESETS,ENEMY_LEVEL_OVERRIDES,PUBLIC_MODELS} from '../data/battle-presets.mjs';
+import {ENCOUNTER_DEFINITIONS,BATTLE_DEFINITIONS,makeEncounterInput} from '../data/common-battle.mjs';
+import {COMMON_PRESENTATION_EXAMPLE} from '../data/common-presentation-example.mjs';
 import {CAMERA_MODES} from '../data/camera-modes.mjs';
 import {ACTOR_FIELDS} from '../graph-v2/rules.mjs';
-import {makeGiyumeiRow} from '../graph-v2/encounter-expansion/giyumei-profiles.mjs';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const json=async path=>JSON.parse(await readFile(path,'utf8'));
-const getPath=(row,path)=>row[path.join('.')]??path.reduce((value,key)=>value?.[key],row);
-function setPath(row,path,value){
-  let current=row;
-  for(let i=0;i<path.length-1;i++)current=current[path[i]]??={};
-  current[path.at(-1)]=structuredClone(value);
-}
-function initialRow(program,override={}){
-  const slots=new Map(program.slots.map(slot=>[slot.name,slot])),row={};
-  for(const [input,name]of Object.entries(program.inputs)){
-    const slot=slots.get(name);
-    if(!slot||slot.initial?.kind!=='input'||slot.initial.default===undefined)throw Error('Missing declared initial input '+name);
-    const value=Object.hasOwn(override,input)?override[input]:getPath(override,slot.initial.path);
-    const chosen=value===undefined?slot.initial.default:value;
-    const values=Array.isArray(chosen)?chosen:[chosen];
-    if(values.length!==slot.width)throw Error('Initial input width differs '+name);
-    setPath(row,slot.initial.path,values);
-  }
-  return row;
-}
-function presetsFor(definition,program){
-  let presets=INPUT_PRESETS[definition.id]?.presets??[{id:'default',labelJa:'標準の初期条件',inputs:{}}];
-  if(definition.id==='giyumei-combat')presets=[315,346].map(monsterId=>({id:'monster'+monsterId,labelJa:monsterId===315?'初戦315 · 原本の初期値':'再戦346 · 原本の初期値',inputs:makeGiyumeiRow({monsterId})}));
-  return presets.map(preset=>{
-    const inputs=initialRow(program,preset.inputs),level=ENEMY_LEVEL_OVERRIDES[definition.id];
-    if(level){
-      if(!Array.isArray(inputs[level.input])||inputs[level.input].length<=level.index)throw Error('Enemy level override input missing');
-      inputs[level.input][level.index]=level.value;
-    }
-    return{id:preset.id,labelJa:preset.labelJa,inputs};
-  });
-}
+const PUBLIC_MODELS=['rom-rng-normalize','rom-physical','rom-buff-stats','rom-vital-effect','rom-extra-actions','rom-weighted-ai6'];
 async function files(directory){
   const result=[];
   for(const entry of (await readdir(directory,{withFileTypes:true})).sort((a,b)=>a.name.localeCompare(b.name))){
@@ -73,12 +43,12 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
     const model={name:ir.name,ir,onnx,sha256,public:publicNames.has(ir.name),executionProvider:explicitCpu.has(ir.name)?'wasm-explicit-cpu':undefined};
     models.set(ir.name,model);return model;
   }
-  const programs=[];
-  for(const definition of PROGRAM_DEFINITIONS){
-    const path=join(root,definition.sourcePath),program=await json(path);
-    for(const module of program.modules)await loadModel(resolve(dirname(path),module.ir),resolve(dirname(path),module.onnx),module.sha256);
-    programs.push({...definition,program,presets:presetsFor(definition,program)});
-  }
+  const programPath=join(root,'graph-v2/common-battle-program.json'),commonProgram=await json(programPath),actionCoverage=await json(join(root,'graph-v2/common-action-coverage.json'));
+  if(!Array.isArray(commonProgram.modules)||!commonProgram.modules.length)throw Error('The shared battle program has no modules');
+  for(const module of commonProgram.modules)await loadModel(resolve(dirname(programPath),module.ir),resolve(dirname(programPath),module.onnx),module.sha256);
+  const commonProgramHash=hash(JSON.stringify(commonProgram));
+  const encounters=ENCOUNTER_DEFINITIONS.map(definition=>({id:definition.id,titleJa:definition.titleJa??definition.name??String(definition.id),scopeJa:definition.scopeJa??'',inputs:makeEncounterInput(definition.id)}));
+  encounters.push(structuredClone(COMMON_PRESENTATION_EXAMPLE));
   const required=new Set([...publicNames,...CAMERA_MODES.flatMap(mode=>mode.models)]);
   for(const name of required){
     if(models.has(name))continue;
@@ -98,14 +68,22 @@ export async function buildRelease({out=join(root,'dist'),reuseGenerated=false}=
     await writeFile(join(out,'models',model.name+'.onnx'),model.onnx);
     await writeFile(join(out,'models',model.name+'.json'),JSON.stringify(model.ir)+'\n');
   }
-  for(const definition of programs){
-    const portable=structuredClone(definition.program);
-    for(const module of portable.modules){module.onnx='../models/'+module.name+'.onnx';module.ir='../models/'+module.name+'.json';}
-    await writeFile(join(out,'programs',definition.id+'.json'),JSON.stringify({id:definition.id,titleJa:definition.titleJa,runtimeAdapter:definition.runtimeAdapter,scopeJa:definition.scopeJa,program:portable,presets:definition.presets},null,2)+'\n');
-  }
-  const html=await buildHtml({root,out,models:ordered,programs,cameras:CAMERA_MODES,actorFields:ACTOR_FIELDS});
-  const coverage={battlePrograms:programs.length,battlePresets:programs.reduce((n,p)=>n+p.presets.length,0),cameraModes:CAMERA_MODES.length,publicPrimitiveGraphs:PUBLIC_MODELS.length,totalGraphs:ordered.length,seedFiltering:false,learnedApproximation:false,implicitCpuFallback:false,fullGameComplete:false,authority:'Original ROM execution and matching decompile; previous emulator is an independent comparator.',limitations:['Represented one-party/one-enemy numerical battle profiles only; arbitrary party rosters, all commands/items and all old configurations are not complete.','The six camera modes remain explicit phases; their RNG effects are not silently omitted from a claim of complete game equivalence.','The binary64 camera model uses explicitly labelled ONNX Runtime Web WASM; there is no silent GPU fallback.','Finite AI retry and turn budgets are reported as unsupported or unfinished, never as a win/loss.']};
-  await writeFile(join(out,'runtime-index.json'),JSON.stringify({schema:'dq9-runtime-index-v1',coverage,models:ordered.map(({name,sha256,public:visible,executionProvider})=>({name,sha256,public:visible,executionProvider,onnx:'models/'+name+'.onnx',ir:'models/'+name+'.json'})),programs:programs.map(({id,titleJa,scopeJa})=>({id,titleJa,scopeJa,path:'programs/'+id+'.json'})),cameras:CAMERA_MODES,html:'dq9-battle-emulator.html'},null,2)+'\n');
+  // Keep the exact common definition unchanged in the HTML and JSON artifact.
+  // Model locations are resolved by name using runtime-index.json, never by boss.
+  await writeFile(join(out,'programs/common-battle.json'),JSON.stringify(commonProgram)+'\n');
+  await mkdir(join(out,'data'),{recursive:true});
+  await writeFile(join(out,'data/definitions.json'),JSON.stringify(BATTLE_DEFINITIONS)+'\n');
+  await writeFile(join(out,'data/encounters.json'),JSON.stringify(encounters,null,2)+'\n');
+  await writeFile(join(out,'data/action-coverage.json'),JSON.stringify(actionCoverage,null,2)+'\n');
+  const html=await buildHtml({root,out,models:ordered,commonProgram,definitions:BATTLE_DEFINITIONS,encounters,actionCoverage,cameras:CAMERA_MODES,actorFields:ACTOR_FIELDS});
+  const coverage={battlePrograms:1,bossSpecificPrograms:false,commonProgramHash,encounterInputs:encounters.length,cameraModes:CAMERA_MODES.length,publicPrimitiveGraphs:PUBLIC_MODELS.length,totalGraphs:ordered.length,seedFiltering:false,learnedApproximation:false,implicitCpuFallback:false,fullGameComplete:false,authority:'Original ROM execution and matching decompile; previous emulator is an independent comparator.',limitations:['An encounter is input data, not a separately verified battle. Definition counts do not claim full action-effect or whole-game coverage.','Unsupported effects, controls and camera state are reported in the execution result rather than replaced with approximations.','Turn/transition budget exhaustion preserves the unfinished state and is never counted as a win or loss.','WASM is the default. Optional WebGPU is strict with no CPU fallback, apart from separately declared DOUBLE models executed by standalone WASM. Adapter identity and actual provider counts are reported; hardware speedup is not inferred.']};
+  const runtimeIndex={schema:'dq9-runtime-index-v2',coverage,
+    models:ordered.map(({name,sha256,public:visible,executionProvider})=>({name,sha256,public:visible,executionProvider,onnx:'models/'+name+'.onnx',ir:'models/'+name+'.json'})),
+    commonProgram:{id:'common-battle',programHash:commonProgramHash,path:'programs/common-battle.json',moduleHashes:Object.fromEntries(commonProgram.modules.map(module=>[module.name,module.sha256]))},
+    definitions:'data/definitions.json',actionCoverage:'data/action-coverage.json',
+    encounters:encounters.map(({id,titleJa})=>({id,titleJa,programHash:commonProgramHash,program:'common-battle'})),
+    encounterInputs:'data/encounters.json',cameras:CAMERA_MODES,html:'dq9-battle-emulator.html'};
+  await writeFile(join(out,'runtime-index.json'),JSON.stringify(runtimeIndex,null,2)+'\n');
   await copyFile(join(root,'README.md'),join(out,'README.md'));
   await copyFile(join(root,'LICENSE'),join(out,'LICENSE'));
   const types={'.onnx':'application/octet-stream','.json':'application/json','.html':'text/html; charset=utf-8','.md':'text/markdown; charset=utf-8'};

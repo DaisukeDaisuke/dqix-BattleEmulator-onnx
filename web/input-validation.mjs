@@ -24,6 +24,6 @@ export function validateModelInput(ir,row){
     if(!valid)failures.push('relation: '+JSON.stringify(relation));
   }
   const initial=contract.initialization;
-  if(initial&&get(initial.counter)===initial.equals)for(const name of initial.zeroInputs)if(!row[name]||row[name].some(value=>value!==0))failures.push(name+': initial values must be zero');
+  if(initial&&typeof initial==='object'&&initial.counter&&Array.isArray(initial.zeroInputs)&&get(initial.counter)===initial.equals)for(const name of initial.zeroInputs)if(!row[name]||row[name].some(value=>value!==0))failures.push(name+': initial values must be zero');
   return failures;
 }
