@@ -79,13 +79,13 @@ export function multiActorArmInput(c){
     if(!party&&!definition)throw Error(c.id+': missing initial monster definition');
     const defaults={party:Number(party),id:actorId,baseAttack:raw.baseAttack??raw.attack??0,baseDefense:raw.baseDefense??raw.defense??0,baseAgility:raw.baseAgility??raw.agility??0,
       level:raw.level??20,dodgeRate:party?2:definition.dodgeRate,guardRate:party?(c.partyShieldGuardTenths??0)/10:definition.guardRate,
-      criticalThreshold:party?Math.trunc(100*(2+.01*Math.max((c.deftness??0)-150,0))):0,hpEquipmentRegen:raw.hpEquipmentRegen??0};
+      criticalThreshold:party?Math.floor(Math.fround(100*Math.fround(2+Math.fround(Math.fround(.01)*Math.max(((c.deftness??0)&1023)-150,0))))):0,hpEquipmentRegen:raw.hpEquipmentRegen??0};
     const base={actor:ACTOR_FIELDS.map(name=>defaults[name]??0)},bytes=initialStats(raw,{enemy:!party}),projection=projectActor(bytes,base);
     const{history,actorCursor,currentStats,...state}=projection;
     return{actorId,group:party?-1:raw.group??0,present:raw.present!==0,roster:raw.roster!==0,definitionId:party?null:raw.monsterId,originalMonsterId:party?null:raw.monsterId,
       ...state,species:definition?.species??0,metal:definition?.metal??false,preparation:[0,0,0,0,bit(bytes[0x3c],64)],
       config:party?[1,0,0,0,2,4,0]:[...definition.config.slice(0,6),Number(bytes[0x53]!==0)],resistances:Array.from(bytes.slice(0x3e,0x54)),
-      weapon:[0,0,10,0],charm:[c.currentCharm??0,c.baseCharm??0,c.equipmentCharm??0],magic:[bytes.readUInt32LE(0x10)>>>10&1023,bytes.readUInt32LE(0x10)>>>20&1023],packedScale:party?[0,(c.deftness??0)&1023]:[0,0],
+      weapon:[0,0,10,0],criticalBaseRate:party?Math.fround(2+Math.fround(Math.fround(.01)*Math.max(((c.deftness??0)&1023)-150,0))):0,charm:[c.currentCharm??0,c.baseCharm??0,c.equipmentCharm??0],magic:[bytes.readUInt32LE(0x10)>>>10&1023,bytes.readUInt32LE(0x10)>>>20&1023],packedScale:party?[0,(c.deftness??0)&1023]:[0,0],
       ai:{cursor:actorCursor,alternate:!!(state.state3c&1),revengeId:history[0],previousId:history[1],storedTransitionId:0,previousTargetCount:0,previousTargets:Array(8).fill(-1)},auxiliaryBytes:Array(9).fill(0),
       commands:party?[{actionId:c.actionId,targets:[c.targetId??192],targetGroup:0}]:[],initialAuthority:{kind:'explicit strict ARM initial RAM',id:c.id,expectedStateUsed:false}};
   });

@@ -16,7 +16,7 @@ const seedBytes=value=>Array.from({length:8},(_,i)=>Number(BigInt(value)>>BigInt
 const initialStats=(a={})=>{
   const b=Buffer.alloc(0xb0);
   for(const[key,offset,fallback]of[['hp',0,100],['mp',2,10],['maxHp',4,100],['maxMp',6,100],['attack',8,82],['defense',10,68],['agility',12,0]])b.writeUInt16LE(a[key]??fallback,offset);
-  b.writeUInt32LE(((a.status??0)|(a.poison?2:0)|(a.hpRegen?0x80000000:0)|(a.mpRegen?0x40000000:0))>>>0,0x14);b.writeUInt32LE(a.flags18??0,0x18);b[0x21]=a.defend??0;b.writeUInt16LE(a.poisonKind??(a.poison?2:0),0x22);b.writeUInt32LE(a.ranksPacked??0,0x58);
+  b.writeUInt32LE(((a.status??0)|((a.hp??100)===0?1:0)|(a.poison?2:0)|(a.hpRegen?0x80000000:0)|(a.mpRegen?0x40000000:0))>>>0,0x14);b.writeUInt32LE(a.flags18??0,0x18);b[0x21]=a.defend??0;b.writeUInt16LE(a.poisonKind??(a.poison?2:0),0x22);b.writeUInt32LE(a.ranksPacked??0,0x58);
   for(const[key,offset]of[['mpDuration',0x68],['hpDuration',0x69],['mpRecovery',0x8b],['hpRecovery',0x8c],['chargeBlock',0x3a],['chargeByte',0x3b],['angerDuration',0x7e],['angerRecovery',0xa1]])b[offset]=a[key]??0;
   // initializeNormalAction leaves history zero unless statBytes supplies it;
   // smart-target fixtures use a different initializer with -1 defaults.
@@ -45,7 +45,9 @@ export function commonArmActionInput(c){
   if(c.kind!=='normal_action'||c.actors?.length!==2||(c.inputTargetCount??c.targetCount??1)!==1)throw Error('Not a supplied single-target caller case: '+c.id);
   const rule=rules.get(c.actionId);if(!rule||rule.raw!==c.actionRaw)throw Error('Action bytes differ from original table: '+c.id);
   const buffers=c.actors.map(initialStats),actors=buffers.map((b,i)=>{const raw=c.actors[i],a=Object.fromEntries(ACTOR_FIELDS.map(key=>[key,0]));Object.assign(a,{baseAttack:raw.baseAttack??raw.attack??82,baseDefense:raw.baseDefense??raw.defense??68,baseAgility:raw.baseAgility??raw.agility??0,level:raw.level??9,party:Number(i===0),id:i===0?0:192,guardRate:i===0?(c.partyShieldGuardTenths??0)/10:0,dodgeRate:i===0?2:0});return actorFromStats(a,b);});
-  const signed=((c.deftness??0)-150)<<16>>16;actors[0].criticalThreshold=Math.floor(Math.fround(100*Math.fround(2+Math.fround(Math.fround(.01)*Math.max(signed,0)))));
+  // The harness writes PARTY_DATA+4 as a packed word; original02158444
+  // reads only its low10 bits for deftness, independently of adjacent stats.
+  const signed=(((c.deftness??0)&1023)-150)<<16>>16;actors[0].criticalThreshold=Math.floor(Math.fround(100*Math.fround(2+Math.fround(Math.fround(.01)*Math.max(signed,0)))));
   const source=c.sourceIndex??1,listed=c.targetId??(source===0?192:0),targetId=rule.targetScope===1||(rule.targetSide===2&&[3,4].includes(rule.targetScope))?(source===0?0:192):listed,target=targetId===0?0:targetId===192?1:-1;if(target<0)throw Error('Target outside the explicit fixture actors: '+c.id);
   // For the explicitly one-actor side, scope1 or friendly group/all collection
   // resolves to the source from initial roster membership and action columns.
@@ -60,8 +62,9 @@ export function commonArmActorTableInput(c){
   const rawActors=c.enemies?[c.actors[0],...c.enemies]:c.actors,sourceId=c.sourceId??((c.sourceIndex??1)===0?0:192),chance=trigger=>trigger===(c.angerTrigger1??0)?c.angerChance1??0:trigger===(c.angerTrigger2??0)?c.angerChance2??0:0;
   const actors=rawActors.map((raw,i)=>{
     const b=initialStats(raw),a=Object.fromEntries(ACTOR_FIELDS.map(key=>[key,0]));Object.assign(a,{baseAttack:raw.baseAttack??raw.attack??82,baseDefense:raw.baseDefense??raw.defense??68,baseAgility:raw.baseAgility??raw.agility??0,level:raw.level??9,party:Number(i===0),id:i===0?0:191+i,guardRate:i===0?(c.partyShieldGuardTenths??0)/10:0,dodgeRate:i===0?2:0});
-    if(i===0){const signed=((c.deftness??0)-150)<<16>>16;a.criticalThreshold=Math.floor(Math.fround(100*Math.fround(2+Math.fround(Math.fround(.01)*Math.max(signed,0)))));}
-    const actor=actorFromStats(a,b);return{...projectedActor(b),actor:ACTOR_FIELDS.map(key=>actor[key]),initialActor:actor,group:raw.group??0,magic:[raw.magicalMight??0,raw.magicalMending??0],packedScale:a.id===sourceId?[c.packedScale0??0,c.packedScale4??0]:[0,0],species:raw.species??0,metal:!!raw.metal,config:[[0,1,1,1,2,1,1,1,1,1,1,2,2][c.job??0],chance(24),chance(3),chance(4),c.angerMin??2,c.angerMax??4,0],otherAngerChances:[chance(19),chance(20)]};
+    if(i===0){const signed=(((c.deftness??0)&1023)-150)<<16>>16;a.criticalThreshold=Math.floor(Math.fround(100*Math.fround(2+Math.fround(Math.fround(.01)*Math.max(signed,0)))));}
+    const criticalBaseRate=i===0?Math.fround(2+Math.fround(Math.fround(.01)*Math.max(((c.deftness??0)&1023)-150,0))):0;
+    const actor=actorFromStats(a,b);return{...projectedActor(b),actor:ACTOR_FIELDS.map(key=>actor[key]),initialActor:actor,criticalBaseRate,group:raw.group??0,magic:[raw.magicalMight??0,raw.magicalMending??0],packedScale:a.id===sourceId?[c.packedScale0??0,c.packedScale4??0]:[0,0],species:raw.species??0,metal:!!raw.metal,config:[[0,1,1,1,2,1,1,1,1,1,1,2,2][c.job??0],chance(24),chance(3),chance(4),c.angerMin??2,c.angerMax??4,0],otherAngerChances:[chance(19),chance(20)]};
   });
   const source=actors.find(a=>a.initialActor.id===sourceId),listed=c.targetId??(sourceId===0?192:0);if(!source)throw Error('Unknown initial source ID');
   let targets=[listed];if(rule.targetScope===1)targets=[sourceId];else if(rule.targetSide===2&&[3,4].includes(rule.targetScope)){

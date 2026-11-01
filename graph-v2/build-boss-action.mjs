@@ -47,7 +47,7 @@ export function buildBossActionCore(options={}){
   count=g.where(g.and(g.eq(oldCombo[2],actionId),g.eq(oldCombo[3],target.id)),count,0);
   const comboUpdateGate=options.comboUpdateGate?options.comboUpdateGate(g,active):active;
   let combo=[side,count,actionId,target.id,...context].map((x,i)=>g.where(comboUpdateGate,g.where(g.gt(rule.combo,0),x,i===3?oldCombo[i]:0),oldCombo[i]));
-  const critAfter=options.criticalCheck?options.criticalCheck(g,rng,rule,g.and(active,g.not(preCrit)),{source,target,partySource}):g.and(active,g.not(preCrit),g.lt(rng.bounded(g.and(active,g.not(preCrit)),10000),source.criticalThreshold)),critical=g.or(critBefore,critAfter);
+  const critAfter=options.criticalCheck?options.criticalCheck(g,rng,rule,g.and(active,g.not(preCrit)),{source,target,partySource}):g.and(active,g.not(preCrit),g.lt(rng.bounded(g.and(active,g.not(preCrit)),10000),source.criticalThreshold)),critical=options.finalCritical?options.finalCritical(g,active,g.or(critBefore,critAfter)):g.or(critBefore,critAfter);
   const defendable=g.and(active,g.eq(g.add(g.add(target.sleep,target.paralysis),target.skip),0)),acrobat=g.gt(target.acrobat,0),dodgeGate=g.and(defendable,g.gt(rule.dodge,0)),dodgeRoll=rng.bounded(g.and(dodgeGate,g.not(acrobat)),100);
   const dodge=g.and(dodgeGate,g.lt(g.where(acrobat,shared,dodgeRoll),g.where(acrobat,50,g.floor(g.mul(target.dodgeRate,g.where(g.gt(target.doubleDodge,0),2,1))))));
   const guardGate=g.and(defendable,g.gt(rule.guard,0),g.not(dodge)),guard=g.and(guardGate,g.lt(rng.bounded(guardGate,100),g.mul(target.guardRate,g.where(g.gt(target.doubleGuard,0),2,1))));
@@ -107,7 +107,7 @@ export function buildBossActionCore(options={}){
   const quarter=g.and(g.ge(g.mul(before[1].hp,4),before[1].maxHp),g.lt(g.mul(actors[1].hp,4),actors[1].maxHp)),half=g.and(g.ge(g.mul(before[1].hp,2),before[1].maxHp),g.lt(g.mul(actors[1].hp,2),actors[1].maxHp));
   const lifecycleContext={before,actors,source,target,sourceIndex,partySource,active,damage,critical,rule,aux,status,wakeSkip};
   const hpAnger=options.beforeHitRecovery?options.beforeHitRecovery(g,rng,lifecycleContext):applyAnger(g.and(active,partySource,g.gt(damage,0),g.gt(actors[1].hp,0),g.or(quarter,half)),g.where(quarter,cfg.angerQuarterChance,cfg.angerHalfChance));
-  const positive=g.and(active,g.gt(internal,0)),wakeGate=g.and(positive,g.gt(rule.recover,0)),wakeRoll=rng.bounded(wakeGate,100);
+  const positive=g.and(active,g.gt(internal,0)),ordinaryWake=g.and(positive,g.gt(rule.recover,0)),wakeGate=options.wakeRecoveryGate?options.wakeRecoveryGate(g,ordinaryWake):ordinaryWake,wakeRoll=rng.bounded(wakeGate,100);
   for(let i=0;i<2;i++){
     const a=actors[i],probability=g.where(g.gt(a.sleep,0),g.where(g.gt(a.party,0),100,50),g.where(g.gt(a.confusion,0),g.where(g.gt(a.party,0),50,25),0)),recovered=g.and(wakeGate,g.eq(sourceIndex,1-i),g.lt(wakeRoll,probability));
     a.sleep=g.where(recovered,0,a.sleep);a.confusion=g.where(recovered,0,a.confusion);

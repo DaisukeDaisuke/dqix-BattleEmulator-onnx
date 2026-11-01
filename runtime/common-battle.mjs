@@ -84,6 +84,9 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
       for(const key of ['rawStatus','rawFlags'])if(!Number.isInteger(a[key])||a[key]<0||a[key]>4294967295)throw Error(key+' must be uint32');
       if(!Number.isInteger(a.statusKinds)||a.statusKinds<0||a.statusKinds>65535)throw Error('statusKinds must be uint16');
       a.coverById??=-1;a.coverTargetId??=-1;
+      a.job??=0;a.weaponWide??=(a.weaponGroupTargets?1:0)|(a.weaponAllTargets?2:0);if(!Number.isInteger(a.job)||a.job<0||a.job>12)throw Error('job must be an original job-table index0..12');
+      if(!Number.isInteger(a.weaponWide)||a.weaponWide<0||a.weaponWide>3)throw Error('weaponWide must contain the original weapon property low2 bits');
+      a.criticalBaseRate??=-1;if(!Number.isFinite(a.criticalBaseRate)||a.criticalBaseRate<-1||a.criticalBaseRate>100)throw Error('criticalBaseRate must be a resolved binary32 base percentage0..100 or -1 for the legacy threshold input');
     }
     if(parties(s).length>4||enemies(s).length>8)throw Error('Actor population exceeds ROM lookup limits');
     s.groups??=Array.from({length:3},()=>({cursor:0,usedSlots:Array(6).fill(false)}));
@@ -93,8 +96,9 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
     s.supported=true;s.budgetExhausted=false;s.transitions=0;s.requestedTurnsComplete=false;s.phase='initial';
   }
 
-  async function run({rows,maxTurns=1,maxTransitions=100000,trace=false,onProgress,shouldStop}={}){
+  async function run({rows,maxTurns=1,maxTransitions=100000,trace=false,onProgress,shouldStop,boundary='turn'}={}){
     if(!Array.isArray(rows)||!rows.length)throw Error('A nonempty batch is required');
+    if(!['turn','command-effects'].includes(boundary))throw Error('Unknown common execution boundary');
     if(!Number.isInteger(maxTurns)||maxTurns<1||!Number.isInteger(maxTransitions)||maxTransitions<1)throw Error('Budgets must be positive integers');
     const states=rows.map(clone);states.forEach(validate);
     const inputHash=await commonProgramHash({definitions,rows}),traces=states.map(()=>[]),queues=new Map();let flushQueued=false,graphCalls=0,batchRows=0;
@@ -211,7 +215,7 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
         if(!yes(out.supported))throw new Boundary('confusion-target',{actionId:record.id,sourceId:a.actorId});commitRandom(s,out);return{list:scalar(out.targetCount)?[scalar(out.targetId)]:[],already:true};
       }
       if(party(a)){
-        let scope=record.targetScope;if(scope===6)scope=a.groupAttackPassive?3:2;if(scope===5)scope=a.weaponAllTargets?3:a.weaponGroupTargets?4:2;
+        let scope=record.targetScope;if(scope===6)scope=a.groupAttackPassive?3:2;if(scope===5)scope=a.weaponWide&2?3:a.weaponWide&1?4:2;
         const chosen=command.targets[0],group=command.targetGroup??actorById(s,chosen)?.group??0;
         if(scope===1)list=[a.actorId];
         else if(record.targetSide===1){
@@ -269,6 +273,19 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
       const candidates=(partyTarget?parties(s):enemies(s)).filter(a=>alive(a)&&(partyTarget||record.targetScope!==4||a.group===target.group));
       return candidates.length?candidates[await draw(s,lane,candidates.length)].actorId:targetId;
     }
+    const needsRedirect=(a,record)=>!!a&&([4,5,9].includes(value(a,'defend'))||!!(a.rawFlags&0x400)||!!a.counterSkill||
+      (!!record.magicReflectable&&(!!(a.rawStatus&0x200)||!!a.equipmentReflect))||!!record.breathReflectable&&!!(a.rawStatus&0x4000000));
+    async function redirectTarget(s,lane,source,targetId,record,sharedRoll,cache){
+      const target=actorById(s,targetId),script=[0x320,0x321].includes(s.scenarioId),pp=parties(s).filter(a=>alive(a)&&(!script||a.actorId===0)),ee=enemies(s).filter(alive);
+      const out=await call(s,lane,'redirectTarget',{seed:s.seed,position:s.position,enabled:true,sourceId:source.actorId,targetId,targetPresent:exists(target),hitPresent:true,
+        targetRawStatusBytes:bytes32(target?.rawStatus??0),targetRawFlagsBytes:bytes32(target?.rawFlags??0),targetDefend:value(target,'defend'),actionId:record.id,targetSide:record.targetSide,
+        magicReflectable:!!record.magicReflectable,breathReflectable:!!record.breathReflectable,counterable:!!record.counterAllowed,sourceWideWeapon:party(source)&&source.weaponWide>0,
+        targetMagicReflectEquipment:!!target?.equipmentReflect,targetCounterSkill:!!target?.counterSkill,targetJob:target?.job??0,scenarioId:s.scenarioId,sharedRoll,
+        priorCounterState:cache.counterState,priorRedirectTarget:cache.targetId,allowTension:true,substitute:false,specialReflect:false,
+        partyRosterIds:pad(pp.map(a=>a.actorId),4,-1),partyRosterCount:pp.length,enemyRosterIds:pad(ee.map(a=>a.actorId),8,-1),enemyRosterCount:ee.length,combo:s.combo});
+      if(!yes(out.supported))throw new Boundary('redirect-target',{actor:source.actorId,targetId,actionId:record.id});
+      commitRandom(s,out);cache.counterState=scalar(out.nextCounterState);cache.targetId=scalar(out.nextRedirectTarget);s.combo=Array.from(out.nextCombo);return out;
+    }
     async function execute(s,lane,command){
       let a=actorById(s,command.sourceId);if(!alive(a)||a.wakeSkip)return;
       const beforePosition=s.position,skipPostBefore=!!(a.rawFlags&0x100),appealed=await appeal(s,lane,a);
@@ -284,22 +301,35 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
         const out=await call(s,lane,'confusion',{seed:s.seed,position:s.position,actor:a.actor,sameSideAliveCount:(party(a)?parties(s):enemies(s)).filter(alive).length,scenarioId:s.scenarioId,enabled:true});commitRandom(s,out);command.actionId=scalar(out.actionId??out.nextAction);command.targetCount=0;command.targets=emptyTargets();command.confused=true;
       }
       if(!yes(prepared.supported)&&!command.confused)throw new Boundary('common-action',{actor:a.actorId,actionId:command.actionId,definitionId:a.definitionId});
-      record=action(command.actionId);let critical=false;
+      const occurrence=await commandEffects(s,lane,command,beforePosition),capture=s.camera.mode!=='numeric-only';
+      const skipPost=skipPostBefore&&!['sleep','paralysis','confusion','skip'].some(key=>value(a,key)>0);
+      if(!s.finished&&!skipPost)for(const sourceId of command.sources){const source=actorById(s,sourceId);if(!exists(source))continue;
+        const beforeModifiers=[source.rawStatus,source.rawFlags,source.statusKinds,...source.rawRanks];
+        const out=await call(s,lane,'postStatus',{...identityInput(s,source),targetValid:alive(actorById(s,source.aux[6]))});commitRandom(s,out);commitActor(source,out);
+        const afterModifiers=[source.rawStatus,source.rawFlags,source.statusKinds,...source.rawRanks];occurrence.auxiliaryEvent||=afterModifiers.some((value,i)=>value!==beforeModifiers[i]);
+      }
+      if(capture)occurrence.presentationAfter={source:presentationSnapshot(a),target:presentationSnapshot(actorById(s,occurrence.impacts[0]?.targetId??occurrence.targets[0]))};
+      occurrence.comboCount=s.combo[1];occurrence.endPosition=s.position;occurrence.outcome=s.outcome;s.turnRecords.push(occurrence);
+    }
+    async function commandEffects(s,lane,command,beforePosition=s.position){
+      const a=actorById(s,command.sourceId);if(!alive(a))throw new Boundary('command-source',{actor:command.sourceId});
+      let record=action(command.actionId),critical=false,consumeTension=false,counterOccurred=false;
       const occurrence={turn:s.turn,sourceId:a.actorId,participants:[...command.sources],actionId:command.actionId,targets:[],impacts:[],startPosition:beforePosition,event:EVENT_ACTIONS.has(command.actionId),auxiliaryEvent:false};
       const capture=s.camera.mode!=='numeric-only';if(capture)occurrence.presentationBefore={source:presentationSnapshot(a)};
       {
         if(!record)throw new Boundary('action-definition',{actionId:command.actionId});
         if(party(a)&&record.planningCategory===3)throw new Boundary('party-item-inventory',{actor:a.actorId,actionId:command.actionId,reasonDetail:'Party item effects require inventory state and the original item-consumption tail.'});
-        const selected=await targets(s,lane,a,command,record),begun=await call(s,lane,'commandBegin',{seed:s.seed,position:s.position,sourceActor:a.actor,actionId:command.actionId,targets:pad(selected.list,8,-1),targetCount:selected.list.length,targetsAlreadyRepeated:selected.already,mpDiscount:!!a.mpDiscount,mpProtected:!!(a.rawFlags&0x200),enabled:true});
+        const selected=await targets(s,lane,a,command,record),begun=await call(s,lane,'commandBegin',{seed:s.seed,position:s.position,sourceActor:a.actor,sourceCriticalBaseRate:a.criticalBaseRate,sourceWideWeapon:party(a)&&a.weaponWide>0,sourceDoubleHitWeapon:!!a.doubleHitWeapon,sourceExtraHitSkill:!!a.extraHitSkill,sourceJob:a.job,actionId:command.actionId,targets:pad(selected.list,8,-1),targetCount:selected.list.length,targetsAlreadyRepeated:selected.already,mpDiscount:!!a.mpDiscount,mpProtected:!!(a.rawFlags&0x200),enabled:true});
         if(!yes(begun.supported))throw new Boundary('common-command-begin',{actor:a.actorId,actionId:command.actionId,reason:scalar(begun.reason)});
         commitRandom(s,begun);commitActor(a,begun,'Source');command.targets=Array.from(begun.nextTargets);command.targetCount=scalar(begun.nextTargetCount);occurrence.targets=command.targets.slice(0,command.targetCount);
-        let priorCovered=false,previousTargetId=-1;occurrence.routes=[];
-        for(const originalTargetId of occurrence.targets){
+        let priorCovered=false,previousTargetId=-1;const redirectCache=new Map();occurrence.routes=[];
+        for(const [hitIndex,originalTargetId]of occurrence.targets.entries()){
           if(!alive(a)||value(a,'hp')<=0)break;
-          let targetId=originalTargetId,sharedAlreadyDrawn=false,sharedRoll=0,coverResolved=false;
+          let targetId=originalTargetId,sharedAlreadyDrawn=false,sharedRoll=0,coverResolved=false,effectSource=a,effectiveRecord=record,routingResolved=false,allowTension=true,resetCombo=false,isCounter=false,extraCritical=false,originalHitCritical=false,criticalAlreadyDrawn=yes(begun.commandCriticalMode),suppliedCritical=yes(begun.commandCritical);
           const repeatingArea=[3,4,5,7,8,11].includes(record.repeatCode)&&[3,4].includes(record.targetScope)&&[1,2].includes(record.targetSide);
           const coverState=roster(s).some(candidate=>value(candidate,'defend')>=6&&value(candidate,'defend')<=8);
-          if(priorCovered||coverState||repeatingArea){
+          const redirectState=roster(s).some(candidate=>needsRedirect(candidate,record));
+          if(priorCovered||coverState||repeatingArea||redirectState){
             // The caller's shared draw precedes cover selection. Forward it
             // to the effect graph so a selected guard never draws it twice.
             sharedRoll=await draw(s,lane,100);sharedAlreadyDrawn=true;
@@ -317,44 +347,59 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
             if(route.skipTarget)continue;
             targetId=route.targetId;if(route.covered)occurrence.auxiliaryEvent=true;
           }
+          const preRedirectTargetId=targetId;
+          if(redirectState){
+            const cache=redirectCache.get(targetId)??{counterState:0,targetId:-1};redirectCache.set(targetId,cache);
+            const route=await redirectTarget(s,lane,a,targetId,record,sharedRoll,cache);routingResolved=true;allowTension=yes(route.nextAllowTension);resetCombo=yes(route.resetCombo);isCounter=yes(route.counter);counterOccurred||=isCounter;
+            effectSource=actorById(s,scalar(route.nextSourceId));targetId=scalar(route.nextTargetId);effectiveRecord=isCounter?action(1):record;extraCritical=isCounter||yes(route.nextSubstitute)||yes(route.nextSpecialReflect);
+            occurrence.routes.push({originalTargetId,preRedirectTargetId,sourceId:effectSource?.actorId,targetId,kind:scalar(route.routeKind),counter:isCounter,substitute:yes(route.nextSubstitute),spellReflected:yes(route.nextSpecialReflect)});
+            occurrence.auxiliaryEvent||=scalar(route.routeCount)>0;
+            if(!exists(effectSource)||(![18,33].includes(record.operation)&&!alive(actorById(s,targetId))))continue;
+          }
           const actualTarget=actorById(s,targetId),targetPresent=exists(actualTarget);
           const target=targetPresent?actualTarget:{actor:fields.map(key=>key==='maxHp'?1:key==='id'?255:0),aux:[0,0,0,0,0,0,-1,...Array(14).fill(0)],status:Array(7).fill(0),tension:[0,0,0],wakeSkip:0,config:Array(7).fill(0),preparation:Array(5).fill(0),resistances:Array(22).fill(100),species:0};
           if(capture&&!occurrence.presentationBefore.target)occurrence.presentationBefore.target=presentationSnapshot(target);
-          const impactBefore=capture?{source:presentationSnapshot(a),target:presentationSnapshot(target)}:null;
-          if(targetPresent&&target.metal&&record.operation===1)throw new Boundary('metal-damage',{actor:a.actorId,targetId,actionId:command.actionId});
-          const out=await call(s,lane,'targetEffect',{seed:s.seed,position:s.position,sourceActor:a.actor,targetActor:target.actor,targetPresent,targetMetal:!!target.metal,coverResolved,sharedAlreadyDrawn,sharedRoll,sourceMagic:a.magic,sourcePackedScale:a.packedScale,
-            sourceSpecies:a.species??0,sourceRawFlagsBytes:bytes32(a.rawFlags),sourceStatusKindsBytes:[a.statusKinds&255,a.statusKinds>>>8],sourceRawTimers:a.rawTimers,targetRawTimers:target.rawTimers??Array(10).fill(0),targetRawStatusBytes:bytes32(target.rawStatus??0),targetRawFlagsBytes:bytes32(target.rawFlags??0),targetRawRanks:target.rawRanks??Array(10).fill(0),targetStatusKindsBytes:[(target.statusKinds??0)&255,(target.statusKinds??0)>>>8],
-            sourceHistory:[a.ai.revengeId??-1,a.ai.previousId??-1],targetHistory:[target.ai?.revengeId??-1,target.ai?.previousId??-1],sourceState3c:a.state3c??0,targetState3c:target.state3c??0,sourceAux:a.aux,targetAux:target.aux,sourceStatus:a.status,targetStatus:target.status,sourceTension:a.tension,targetTension:target.tension,sourceWakeSkip:a.wakeSkip,targetWakeSkip:target.wakeSkip,sourceConfig:a.config,targetConfig:target.config,sourcePreparation:a.preparation,targetPreparation:target.preparation,resistances:target.resistances,sourceWeapon:[...a.weapon.slice(0,3),target.species??a.weapon[3]],chargedPartyCount:charged(s),coupBlocked:!!s.coupBlocked,actionId:command.actionId,commandCritical:yes(begun.commandCritical),preparedConfusion:!!command.confused,combo:s.combo,context:s.context,enabled:true});
+          const impactBefore=capture?{source:presentationSnapshot(effectSource),target:presentationSnapshot(target)}:null;
+          if(targetPresent&&target.metal&&effectiveRecord.operation===1)throw new Boundary('metal-damage',{actor:a.actorId,targetId,actionId:effectiveRecord.id});
+          if(targetPresent&&(target.rawFlags&0x20)&&effectiveRecord.operation===1)throw new Boundary('blade-defense',{actor:a.actorId,targetId,actionId:effectiveRecord.id,reasonDetail:'The original blade-defense damage multiplier and recoil callback are not represented.'});
+          if(routingResolved){
+            const checked=await call(s,lane,'redirectCritical',{seed:s.seed,position:s.position,enabled:true,originalActionId:command.actionId,effectiveActionId:effectiveRecord.id,originalCriticalThreshold:value(a,'criticalThreshold'),effectiveCriticalThreshold:value(effectSource,'criticalThreshold'),originalCriticalBaseRate:a.criticalBaseRate,effectiveCriticalBaseRate:effectSource.criticalBaseRate,criticalHitCount:command.targetCount,commandCriticalMode:yes(begun.commandCriticalMode),commandCritical:yes(begun.commandCritical),extraCritical});
+            commitRandom(s,checked);criticalAlreadyDrawn=true;suppliedCritical=yes(checked.critical);originalHitCritical=yes(checked.originalCritical);
+          }
+          const out=await call(s,lane,'targetEffect',{seed:s.seed,position:s.position,sourceActor:effectSource.actor,sourceCriticalBaseRate:effectSource.criticalBaseRate,criticalHitCount:command.targetCount,hitIndex,sourceWideWeapon:party(effectSource)&&effectSource.weaponWide>0,targetActor:target.actor,targetPresent,targetMetal:!!target.metal,coverResolved,sharedAlreadyDrawn,sharedRoll,routingResolved,allowTension,resetCombo,skipComboUpdate:hitIndex>0&&yes(begun.suppressRepeatedCombo),isCounter,criticalAlreadyDrawn,suppliedCritical,originalSourceId:a.actorId,originalActionId:command.actionId,sourceMagic:effectSource.magic,sourcePackedScale:effectSource.packedScale,
+            sourceSpecies:effectSource.species??0,sourceRawFlagsBytes:bytes32(effectSource.rawFlags),sourceStatusKindsBytes:[effectSource.statusKinds&255,effectSource.statusKinds>>>8],sourceRawTimers:effectSource.rawTimers,targetRawTimers:target.rawTimers??Array(10).fill(0),targetRawStatusBytes:bytes32(target.rawStatus??0),targetRawFlagsBytes:bytes32(target.rawFlags??0),targetRawRanks:target.rawRanks??Array(10).fill(0),targetStatusKindsBytes:[(target.statusKinds??0)&255,(target.statusKinds??0)>>>8],
+            sourceHistory:[effectSource.ai.revengeId??-1,effectSource.ai.previousId??-1],targetHistory:[target.ai?.revengeId??-1,target.ai?.previousId??-1],sourceState3c:effectSource.state3c??0,targetState3c:target.state3c??0,sourceAux:effectSource.aux,targetAux:target.aux,sourceStatus:effectSource.status,targetStatus:target.status,sourceTension:effectSource.tension,targetTension:target.tension,sourceWakeSkip:effectSource.wakeSkip,targetWakeSkip:target.wakeSkip,sourceConfig:effectSource.config,targetConfig:target.config,sourcePreparation:effectSource.preparation,targetPreparation:target.preparation,resistances:target.resistances,sourceWeapon:[...effectSource.weapon.slice(0,3),target.species??effectSource.weapon[3]],chargedPartyCount:charged(s),coupBlocked:!!s.coupBlocked,actionId:effectiveRecord.id,commandCritical:yes(begun.commandCritical),preparedConfusion:!!command.confused,combo:s.combo,context:s.context,enabled:true});
           if(!yes(out.supported))throw new Boundary('common-target-effect',{actor:a.actorId,targetId,actionId:command.actionId});
-          commitRandom(s,out);commitActor(a,out,'Source');if(targetPresent)commitActor(target,out,'Target');if(targetPresent&&yes(out.escaped)){target.excluded=true;target.dead=false;target.deathResetPending=false;target.escapeResetPending=true;target.ai.revengeId=-1;target.ai.previousId=-1;}if(out.nextCombo)s.combo=Array.from(out.nextCombo);if(out.nextContext)s.context=Array.from(out.nextContext);critical||=yes(out.critical);
-          occurrence.impacts.push({targetId,originalTargetId,damage:scalar(out.damage),internalDamage:scalar(out.internalDamage),recovery:scalar(out.recoveryAmount),critical:yes(out.critical),hp:value(target,'hp'),mp:value(target,'mp'),effectApplied:yes(out.effectApplied),
+          commitRandom(s,out);commitActor(effectSource,out,'Source');if(targetPresent)commitActor(target,out,'Target');if(targetPresent&&yes(out.escaped)){target.excluded=true;target.dead=false;target.deathResetPending=false;target.escapeResetPending=true;target.ai.revengeId=-1;target.ai.previousId=-1;}if(out.nextCombo)s.combo=Array.from(out.nextCombo);if(out.nextContext)s.context=Array.from(out.nextContext);critical||=extraCritical?originalHitCritical:yes(out.critical);consumeTension||=yes(out.tensionUsed);
+          occurrence.impacts.push({sourceId:effectSource.actorId,originalSourceId:a.actorId,targetId,originalTargetId,preRedirectTargetId,effectiveActionId:effectiveRecord.id,damage:scalar(out.damage),internalDamage:scalar(out.internalDamage),recovery:scalar(out.recoveryAmount),critical:yes(out.critical),originalCritical:extraCritical?originalHitCritical:yes(out.critical),hp:value(target,'hp'),mp:value(target,'mp'),effectApplied:yes(out.effectApplied),
             comboCount:s.combo[1],...(out.accuracyPassed?{accuracyPassed:yes(out.accuracyPassed)}:{}),...(out.dodged?{dodged:yes(out.dodged)}:{}),...(out.guarded?{guarded:yes(out.guarded)}:{}),...(out.blindMiss?{blindMiss:yes(out.blindMiss)}:{}),...(out.operationHit?{operationHit:yes(out.operationHit)}:{}),
-            ...(capture?{presentationBefore:impactBefore,presentationAfter:{source:presentationSnapshot(a),target:presentationSnapshot(target)}}:{})});
+            ...(capture?{presentationBefore:impactBefore,presentationAfter:{source:presentationSnapshot(effectSource),target:presentationSnapshot(target)}}:{})});
           occurrence.auxiliaryEvent||=yes(out.charged)||yes(out.angerActivated)||yes(out.escaped)||value(target,'hp')<=0;
         }
         for(const enemy of enemies(s).filter(alive)){
           const out=await call(s,lane,'enemyReaction',{seed:s.seed,position:s.position,sourceActor:a.actor,targetActor:enemy.actor,targetAux:enemy.aux,targetConfig:enemy.config,otherAngerChances:definition(enemy)?.otherAngerChances??[0,0],actionId:command.actionId,critical,enabled:true});commitRandom(s,out);commitActor(enemy,out,'Target');occurrence.auxiliaryEvent||=yes(out.angerActivated);
         }
       }
-      const end=await call(s,lane,'commandEnd',{seed:s.seed,position:s.position,sourceActor:a.actor,sourceAux:a.aux,sourceConfig:a.config,sourceTension:a.tension,actionId:command.actionId,context:s.context,opponentsAlive:(party(a)?enemies(s):parties(s)).some(alive),chargedPartyCount:charged(s),coupBlocked:!!s.coupBlocked,enabled:true});
+      const end=await call(s,lane,'commandEnd',{seed:s.seed,position:s.position,sourceActor:a.actor,sourceAux:a.aux,sourceConfig:a.config,sourceTension:a.tension,consumeTension,counterOccurred,actionId:command.actionId,context:s.context,opponentsAlive:(party(a)?enemies(s):parties(s)).some(alive),chargedPartyCount:charged(s),coupBlocked:!!s.coupBlocked,enabled:true});
       commitRandom(s,end);commitActor(a,end,'Source');s.context=Array.from(end.nextContext);occurrence.auxiliaryEvent||=yes(end.charged);outcome(s);
-      const skipPost=skipPostBefore&&!['sleep','paralysis','confusion','skip'].some(key=>value(a,key)>0);
-      if(!s.finished&&!skipPost)for(const sourceId of command.sources){const source=actorById(s,sourceId);if(!exists(source))continue;
-        const beforeModifiers=[source.rawStatus,source.rawFlags,source.statusKinds,...source.rawRanks];
-        const out=await call(s,lane,'postStatus',{...identityInput(s,source),targetValid:alive(actorById(s,source.aux[6]))});commitRandom(s,out);commitActor(source,out);
-        const afterModifiers=[source.rawStatus,source.rawFlags,source.statusKinds,...source.rawRanks];occurrence.auxiliaryEvent||=afterModifiers.some((value,i)=>value!==beforeModifiers[i]);
-      }
       if(capture)occurrence.presentationAfter={source:presentationSnapshot(a),target:presentationSnapshot(actorById(s,occurrence.impacts[0]?.targetId??occurrence.targets[0]))};
-      occurrence.comboCount=s.combo[1];occurrence.endPosition=s.position;occurrence.outcome=s.outcome;s.turnRecords.push(occurrence);
+      occurrence.comboCount=s.combo[1];occurrence.endPosition=s.position;occurrence.outcome=s.outcome;return occurrence;
     }
     async function commands(s,lane){
-      const redirected=roster(s).filter(a=>alive(a)&&value(a,'defend')>3&&![6,7,8].includes(value(a,'defend')));
-      if(redirected.length)throw new Boundary('counter-or-reflection-routing',{actors:redirected.map(a=>({actorId:a.actorId,defend:value(a,'defend')})),reasonDetail:'Counter/reflection transfer is not yet connected to the common numerical target loop.'});
+      const unknown=roster(s).filter(a=>alive(a)&&(value(a,'defend')<0||value(a,'defend')>9));
+      if(unknown.length)throw new Boundary('unknown-defend-state',{actors:unknown.map(a=>({actorId:a.actorId,defend:value(a,'defend')}))});
       for(const command of s.pendingCommands){if(s.finished)break;await execute(s,lane,command);}
     }
     async function finishTurn(s,lane){
       if(!s.finished){
-        const apply=async(a,operation)=>{const before=s.camera.mode==='numeric-only'?null:JSON.stringify([a.actor,a.aux,a.status]),selected=s.pendingCommands.filter(c=>c.sourceId===a.actorId),out=await call(s,lane,'periodic',{...identityInput(s,a),operation,defendMpRecovery:!!a.defendMpRecovery,selectedCommandCount:selected.length,selectedCommandKind:selected[0]?.selectedKind??0});commitRandom(s,out);commitActor(a,out);if(before&&before!==JSON.stringify([a.actor,a.aux,a.status]))s.presentationExtraEvents=true;};
+        const apply=async(a,operation)=>{
+          const capture=s.camera.mode!=='numeric-only',before=capture?presentationSnapshot(a):null,selected=s.pendingCommands.filter(c=>c.sourceId===a.actorId),out=await call(s,lane,'periodic',{...identityInput(s,a),operation,defendMpRecovery:!!a.defendMpRecovery,selectedCommandCount:selected.length,selectedCommandKind:selected[0]?.selectedKind??0});commitRandom(s,out);commitActor(a,out);
+          if(capture){
+            const after=presentationSnapshot(a),changed=JSON.stringify(before)!==JSON.stringify(after),side=party(a)?'party':'enemy';
+            s.periodicPresentationRecords.push({groupKey:side+'-'+['entry','hp','mp','poison'][operation],side,operation,actorId:a.actorId,order:s.periodicPresentationRecords.length,before,after,output:clone(out)});
+            if(changed){if(operation===0)s.presentationExtraEvents=true;else s.periodicPresentationRequired=true;}
+          }
+        };
         for(const a of roster(s).filter(alive))await apply(a,0);
         const partySnapshot=parties(s).filter(alive);for(const operation of[1,2,3])for(const a of partySnapshot)await apply(a,operation);
         const enemySnapshot=enemies(s).filter(alive);for(const operation of[2,3])for(const a of enemySnapshot)await apply(a,operation);
@@ -370,15 +415,25 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
       if(typeof presentationRunner==='function'){
         const result=await presentationRunner({state:clone(s),records:clone(s.turnRecords),runGraph:(name,inputs)=>Promise.all(inputs.map(input=>call(s,lane,name,input))),getModel:model});
         if(result?.seed)s.seed=Array.from(result.seed);if(result?.position!==undefined)s.position=scalar(result.position);if(result?.camera)s.camera=clone(result.camera);
+        if(s.periodicPresentationRequired&&result?.periodicComplete!==true)throw new Boundary('periodic-presentation',{reasonDetail:'Periodic before/after groups have not been admitted by the shared event producer.'});
         if(!result?.complete)throw new Boundary('presentation',{details:result?.unresolvedEffects??'Incomplete presentation transition'});return;
       }
       throw new Boundary('presentation-initial-state',{row4Words:s.camera.row4Words,reason:'The shared camera requires an initial visual/program state and event schedule; numeric-only is an explicit separate mode.'});
     }
     const handlers={'turn-begin':turnBegin,initiative,planning,'planning-preprocess':planningPreprocess,priority:async(s)=>priority(s),commands,finish:finishTurn,presentation};
     await Promise.all(states.map(async(s,lane)=>{try{
-      outcome(s);if(s.finished){s.phase='terminal';s.requestedTurnsComplete=true;return;}for(let n=0;n<maxTurns;n++){
+      outcome(s);if(s.finished){s.phase='terminal';s.requestedTurnsComplete=true;s.requestedCommandsComplete=true;return;}
+      if(boundary==='command-effects'){
+        // The exact production command loop is also an explicit lower-level
+        // API. It excludes planning, primary/post recovery and turn finish.
+        if(!Array.isArray(s.pendingCommands)||!s.pendingCommands.length)throw Error('command-effects requires explicit initial commands');
+        s.turnRecords=[];s.phase='command-effects';
+        for(const command of s.pendingCommands){if(s.finished)break;s.turnRecords.push(await commandEffects(s,lane,command));}
+        s.phase='command-effects-complete';s.requestedCommandsComplete=true;return;
+      }
+      for(let n=0;n<maxTurns;n++){
         if(s.camera.mode!=='numeric-only'&&s.camera.nextNumericTurnReady===false&&s.completedTurns>0)throw new Boundary('presentation-to-next-turn',{reasonDetail:'The asynchronous presentation lifecycle has not yet returned to the numerical turn boundary.'});
-        s.turnRecords=[];s.presentationExtraEvents=false;
+        s.turnRecords=[];s.presentationExtraEvents=false;s.periodicPresentationRecords=[];s.periodicPresentationRequired=false;
         for(const phase of program.phases){s.phase=phase.op??phase.id??phase.name;const handler=handlers[s.phase];if(!handler)throw Error('Unknown common phase '+s.phase);await handler(s,lane);}
         await onProgress?.({lane,turn:s.turn,completedTurns:s.completedTurns,position:s.position,outcome:s.outcome,graphCalls,transitions:s.transitions});if(s.finished)break;
       }s.phase='ready';s.requestedTurnsComplete=true;
@@ -387,8 +442,8 @@ export async function createCommonBattleRunner({program,definitions,getModel,run
       else if(error instanceof Boundary){s.supported=false;s.unresolvedEffects.push({phase:s.phase,reason:error.message,...error.details});}
       else throw error;
     }}));
-    const unresolvedEffects=states.flatMap((s,lane)=>s.unresolvedEffects.map(value=>({lane,...value}))),complete=states.every(s=>s.requestedTurnsComplete&&s.supported&&!s.budgetExhausted);
-    return{rows:states,traces:trace?traces:undefined,complete,wholeBattleComplete:complete&&states.every(s=>s.finished&&s.camera.complete),numericOnly:states.every(s=>s.camera.mode==='numeric-only'),unresolvedEffects,budgetExhausted:states.some(s=>s.budgetExhausted),programHash,moduleHashes,inputHash,graphCalls,batchRows,scope:'One common actor-array controller and the same ONNX modules for all input definitions. complete means the requested bounded scope completed, not all game actions or camera states are covered.'};
+    const unresolvedEffects=states.flatMap((s,lane)=>s.unresolvedEffects.map(value=>({lane,...value}))),complete=states.every(s=>(boundary==='command-effects'?s.requestedCommandsComplete:s.requestedTurnsComplete)&&s.supported&&!s.budgetExhausted);
+    return{rows:states,traces:trace?traces:undefined,complete,boundary,wholeBattleComplete:boundary==='turn'&&complete&&states.every(s=>s.finished&&s.camera.complete),numericOnly:states.every(s=>s.camera.mode==='numeric-only'),unresolvedEffects,budgetExhausted:states.some(s=>s.budgetExhausted),programHash,moduleHashes,inputHash,graphCalls,batchRows,scope:'One common actor-array controller and the same ONNX modules for all input definitions. complete means the requested bounded scope completed, not all game actions or camera states are covered.'};
   }
-  return{run,programHash,moduleHashes,program};
+  return{run,runCommandEffects:options=>run({...options,boundary:'command-effects'}),programHash,moduleHashes,program};
 }

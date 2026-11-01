@@ -17,6 +17,13 @@ export function inferPureOnnxMetadata(graph){
     if(node.op==='Identity'){emit(first.dtype,first.shape);continue;}
     if(node.op==='Cast'){if(!types.has(a.to))throw Error('Unsupported pure Cast type');emit(a.to,first.shape);continue;}
     if(node.op==='Floor'){if(first.dtype!==1)throw Error('Floor requires float32');emit(first.dtype,first.shape);continue;}
+    if(node.op==='Div'){
+      // The battle graph needs true float32 division at the original critical
+      // probability rounding site. Integer division has a separate trapping
+      // boundary and is deliberately outside this scalar reference subset.
+      if(inputs.length!==2||inputs.some(v=>v.dtype!==1))throw Error('Pure Div requires two float32 operands');
+      emit(1,broadcast(inputs.map(v=>v.shape)));continue;
+    }
     if(node.op==='Not'){if(first.dtype!==9)throw Error('Not requires bool');emit(9,first.shape);continue;}
     if(['Add','Sub','Mul','Min','Max','Equal','Less','LessOrEqual','Greater','GreaterOrEqual','And','Or'].includes(node.op)){
       const dtype=sameTypes(inputs),isBoolean=['And','Or'].includes(node.op),comparison=['Equal','Less','LessOrEqual','Greater','GreaterOrEqual'].includes(node.op);

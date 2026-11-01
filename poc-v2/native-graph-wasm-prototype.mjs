@@ -67,6 +67,7 @@ export function compileNativeGraphWasm(graph){
     for(let j=0;j<product(info.shape);j++){
       const x=args.map(v=>input(v,info.shape,j));items.push(saveResult(info.dtype,()=>{
         if(arithmetic[node.op]){get(x[0]);get(x[1]);emit(arithmetic[node.op][args[0].dtype===1?0:1]);}
+        else if(node.op==='Div'){get(x[0]);get(x[1]);emit(0x95);}
         else if(comparison[node.op]){get(x[0]);get(x[1]);emit(comparison[node.op][args[0].dtype===1?0:1]);}
         else if(node.op==='Floor'){get(x[0]);emit(0x8e);}
         else if(node.op==='Where'){get(x[1]);get(x[2]);get(x[0]);emit(0x1b);}

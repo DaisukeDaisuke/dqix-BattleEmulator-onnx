@@ -11,12 +11,13 @@ const F=Math.fround,dir=new URL('./',import.meta.url),hash=x=>createHash('sha256
 // mode0: fallback identity; mode1: f32 multiply then truncate;
 // mode2: exact signed-int shift by1 (restricted nonnegative input);
 // mode3: integer divide by2 then add37; mode4/5: already audited
-// base-attack/level range rules. These order tags are semantics, not training.
+// base-attack/level range rules; mode6 multiplies fallback by one random range.
+// These order tags are semantics, not training.
 export const SELECTOR_COLUMN_RULES=[
   [0,0,1,0,0,0],[3,1,1.25,0,0,0],[5,4,1,0,.85,.95],
   [6,1,2.5,0,0,0],[7,1,1.25,0,0,0],[9,1,.75,0,0,0],
   [11,1,.5,0,0,0],[14,0,1,0,0,0],[17,2,2,0,0,0],
-  [19,1,.3,0,0,0],[24,1,1.3,0,0,0],[25,1,1.2,0,0,0],
+  [19,1,.3,0,0,0],[21,6,1,0,.1,.5],[24,1,1.3,0,0,0],[25,1,1.2,0,0,0],
   [27,1,.8,0,0,0],[31,0,1,0,0,0],[33,1,1.5,0,0,0],
   [36,1,1.5,0,0,0],[37,0,1,0,0,0],[38,1,.7,0,0,0],
   [41,5,2.5,0,.9,1.1],[57,3,.5,37,0,0]
@@ -28,7 +29,7 @@ export function selectorColumns(g,selector){
   return{supported:g.gt(g.op('Gather',[g.constant(Array.from({length:67},(_,i)=>Number(rows.has(i))),'float32',[67]),index],{axis:0},{shape:['N',1]}),0),mode:get('mode'),scale:get('scale'),bias:get('bias'),low:get('low'),high:get('high')};
 }
 export function columnSelectorDamage(g,rng,selector,fallback,baseAttack,resolvedLevel,enabled){
-  const c=selectorColumns(g,selector),active=g.and(enabled,c.supported),randomMode=g.or(g.eq(c.mode,4),g.eq(c.mode,5)),range=rng.range(g.and(active,randomMode),c.low,c.high);
+  const c=selectorColumns(g,selector),active=g.and(enabled,c.supported),randomMode=g.or(g.eq(c.mode,4),g.eq(c.mode,5),g.eq(c.mode,6)),range=rng.range(g.and(active,randomMode),c.low,c.high);
   const product=g.mul(g.where(g.eq(c.mode,4),baseAttack,g.where(g.eq(c.mode,5),resolvedLevel,fallback)),c.scale);
   const fixed=g.add(g.floor(product),c.bias),random=g.floor(g.mul(product,range));
   // No rounding-site contraction: level first multiplies by2.5, then range.

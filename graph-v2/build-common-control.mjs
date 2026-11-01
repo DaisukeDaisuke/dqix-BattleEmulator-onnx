@@ -271,7 +271,7 @@ export function buildCommonPeriodic(){
   for(const key of ['appealMode','skipKind'])preparation[key]=g.where(died,0,preparation[key]);
   randomOutputs(g,rng,position);g.output(pack(g,ACTOR_FIELDS,next.actor),'nextActor');g.output(pack(g,COMMON_AUX_FIELDS,next.aux),'nextAux');g.output(pack(g,COMMON_STATUS_FIELDS,next.status),'nextStatus');
   g.output(pack(g,COMMON_TENSION_FIELDS,next.tension),'nextTension');g.output(pack(g,COMMON_PREPARATION_FIELDS,preparation),'nextPreparation');g.output(g.where(g.and(active,g.eq(operation,0)),0,wakeSkip),'nextWakeSkip');
-  g.output(g.sub(actor.hp,before.hp),'deltaHP');g.output(g.sub(actor.mp,before.mp),'deltaMP');g.output(died,'died');g.output(active,'active');g.output(supported,'supported');return g;
+  g.output(g.sub(actor.hp,before.hp),'deltaHP');g.output(g.sub(actor.mp,before.mp),'deltaMP');g.output(g.where(hpGate,hpAmount,0),'hpRequested');g.output(g.where(mpApply,mpAmount,0),'mpRequested');g.output(g.where(poison,amount,0),'poisonRequested');g.output(died,'died');g.output(active,'active');g.output(supported,'supported');return g;
 }
 
 export function buildCommonTurnStatus(){

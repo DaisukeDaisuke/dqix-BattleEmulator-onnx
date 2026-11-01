@@ -12,6 +12,9 @@ import {decodedDispelColumns} from './encounter-expansion/build-dispel-action.mj
 import dispelMask from '../data/dispel-mask.mjs';
 import {COMMON_MODIFIER_RULES,COMMON_RAW_TIMER_FIELDS,COMMON_RAW_TIMER_OFFSETS,clearCommonModifier} from './common-modifier-rules.mjs';
 import {COMMON_STATE_SELECTOR_RULES,COMMON_STATE_SELECTOR_IDS,commonStateSelectorDamage} from './common-state-selector-rules.mjs';
+import {commonCriticalThreshold} from './common-critical-rules.mjs';
+import {expandCommonCommandTargets,COMMON_TARGET_DAMAGE_FALLOFF} from './common-command-repetition.mjs';
+import {applyCommonModifierCreation} from './common-modifier-create.mjs';
 import rom from '../restored/dq9-unified/data/rom.mjs';
 import {ACTOR_FIELDS,COMMON_AUX_FIELDS,COMMON_STATUS_FIELDS,COMMON_CONFIG_FIELDS,COMMON_TENSION_FIELDS,COMMON_PREPARATION_FIELDS,COMMON_HISTORY_FIELDS,COMMON_MAGIC_FIELDS,COMMON_PACKED_SCALE_FIELDS,COMMON_RAW_RANK_FIELDS,COMMON_RAW_STATE_ABI,commonAuxDefault} from './common-battle-schema.mjs';
 import {fileURLToPath} from 'node:url';
@@ -56,7 +59,7 @@ export const COMMON_ACTION_RULES=Object.freeze(rom.actions.map(action=>{
   const bytes=Buffer.from(action.raw,'hex'),rule=decodeBossActionRule(action.id),word14=bytes.readUInt32LE(20),word1c=bytes.readUInt32LE(28),word2c=bytes.readUInt32LE(44),magicMinimum=action.w04>>>12&1023,magicMaximum=action.w04>>>22&1023,chanceMinimum=word14>>>7&127,chanceMaximum=word14>>>14&127;
   const magicSource=action.w10&0x4000?1:action.w10&0x8000?2:0,packed=damageById.get(action.damageId),special=packedSpecialById.get(action.id),packedSource=rule.accuracyMode===2?(special?.source??magicSource):0,packedMinimum=special?.minimum??magicMinimum,packedMaximum=special?.maximum??magicMaximum;
   let family=0,reason='operation';
-  if(rule.operation===1&&supportedSelectors.has(action.selector)&&action.selector!==47&&[0,1,4,8].includes(rule.additional)){family=1;reason=null;}
+  if(rule.operation===1&&supportedSelectors.has(action.selector)&&action.selector!==47&&[0,1,4,8,11].includes(rule.additional)){family=1;reason=null;}
   if(rule.operation===2&&action.selector===0&&rule.additional===0){family=2;reason=null;}
   if([3,4,5].includes(rule.operation)&&action.selector===0&&[0,8,17].includes(rule.additional)&&rule.parameter!==0&&Math.abs(rule.parameter)<=2){family=3;reason=null;}
   if(rule.operation===8&&action.selector===0&&rule.additional===0){family=4;reason=null;}
@@ -70,6 +73,7 @@ export const COMMON_ACTION_RULES=Object.freeze(rom.actions.map(action=>{
   if(rule.operation===21&&action.selector===0&&rule.additional===0){family=13;reason=null;}
   if(rule.operation===19&&action.selector===0&&rule.additional===0&&rule.parameter>=0&&rule.parameter<=7){family=14;reason=null;}
   if([22,23].includes(rule.operation)&&action.selector===0&&rule.additional===0&&rule.parameter!==0&&Math.abs(rule.parameter)<=2){family=15;reason=null;}
+  if(((rule.operation===46&&rule.parameter>=1&&rule.parameter<=5)||[61,62].includes(rule.operation))&&action.selector===0&&rule.additional===0){family=16;reason=null;}
   // This is the no-effect event body, not the planning effects of defend,
   // reflection or other operation0 commands with independent flags.
   if(rule.operation===0&&[0,47].includes(action.selector)&&rule.additional===0&&(action.w10&~0x1000000)===0&&[1,8].includes(bytes.readUInt32LE(20)>>>28)){family=10;reason=null;}
@@ -80,14 +84,14 @@ export const COMMON_ACTION_RULES=Object.freeze(rom.actions.map(action=>{
   return Object.freeze({...rule,damageId:action.damageId,selector:action.selector,damageCap:word1c&0x3fff,
     forcedCritical:action.w08>>>29&1,repeatCode:word1c>>>14&31,category:word1c>>>19&31,
     effectElement:action.w18>>>27&31,tensionFlag:Number(!!(action.w10&0x2000)),equipmentFlag:Number(!!(action.w10&0x40000)),prepaidMP:action.w08>>>28&1,
-    magicBarrierFlag:action.w10&1,breathBarrierFlag:action.w10>>>2&1,forceExcluded:Number([505,517].includes(action.id)),
+    magicBarrierFlag:action.w10&1,breathBarrierFlag:action.w10>>>2&1,weaponRepeatFlag:Number(!!(action.w10&0x100000)),targetDecayFlag:Number(!!(action.w10&0x20000)),forceExcluded:Number([505,517].includes(action.id)),
     magicSource,magicMinimum,magicMaximum,chanceMinimum,chanceMaximum,accuracySlope:magicMinimum===magicMaximum?0:Math.fround((chanceMaximum-chanceMinimum)/(magicMaximum-magicMinimum)),
     packedSource,packedMinimum,packedMaximum,packedBaseLow:packed?.base1??0,packedBaseHigh:packed?.base2??0,packedWidth:packed?.width??0,packedSlope:packedMinimum===packedMaximum?0:Math.fround(((packed?.base2??0)-(packed?.base1??0))/(packedMaximum-packedMinimum)),
     attackCriticalFormula:Number([1,219,505].includes(action.id)),criticalDamageSuppressed:Number([72,112].includes(action.id)),
     coupBonus:word2c>>>20&127,afterAction:word2c>>>10&15,planningCategory:action.w18>>>12&15,targetSide:action.w08>>>8&3,targetScope:bytes.readUInt32LE(20)>>>28,
     // Original additional1 explicitly treats this row as a plain chance.
     // It is action data, never a boss-specific execution path.
-    additionalPlainChance:Number(action.id===569),additionalDefenseIgnoreResistance:Number(action.id===173),selfEscape:Number([225,917].includes(action.id)),forcedCriticalBonus:Number(action.id===505),restoreMPFull:Number([411,558].includes(action.id)),restoreHPFull:Number([33,784].includes(action.id)),primaryRecoveryEvent:Number([900,901,938].includes(action.id)),family,supported:family>0,unsupportedReason:reason});
+    additionalPlainChance:Number(action.id===569),additionalDefenseIgnoreResistance:Number(action.id===173),additionalParalysisSpecies:Number(action.id===82)*9,additionalParalysisMetalChance:Number(action.id===88),selfEscape:Number([225,917].includes(action.id)),forcedCriticalBonus:Number(action.id===505),restoreMPFull:Number([411,558].includes(action.id)),restoreHPFull:Number([33,784].includes(action.id)),primaryRecoveryEvent:Number([900,901,938].includes(action.id)),family,supported:family>0,unsupportedReason:reason});
 }));
 export const COMMON_SUPPORTED_ACTION_IDS=Object.freeze(COMMON_ACTION_RULES.filter(rule=>rule.supported).map(rule=>rule.id));
 const arithmeticRules=COMMON_ACTION_RULES.map(rule=>{const row={...rule};delete row.unsupportedReason;row.supported=Number(row.supported);return row;});
@@ -204,7 +208,7 @@ export function buildCommonPostprocessBoundary(){
 export function buildCommonCommandBegin(){
   const g=new Graph('rom-common-command-begin',commonContract('命令単位の実行対象再構成・MP支払・事前会心。入力定義だけで同じグラフを使用します。'));
   const seed=input(g,'seed',8),position=input(g,'position',1,'int32'),sourceInput=inputActor(g,'sourceActor'),source=actor(g,sourceInput),action=input(g,'actionId'),enabled=input(g,'enabled',1,'bool'),targetsInput=input(g,'targets',8,'float32',{min:-1,max:255,integer:true},Array(8).fill(-1)),count=input(g,'targetCount',1,'float32',{min:0,max:8,integer:true},1),already=input(g,'targetsAlreadyRepeated',1,'bool',flagDomain,false);
-  const discount=input(g,'mpDiscount',1,'bool',flagDomain,false),protectedMp=input(g,'mpProtected',1,'bool',flagDomain,false),known=actionSupported(g,action),party=asBool(g,source.party),stateSupported=g.or(g.not(party),g.not(g.eq(lookup(g,action,'planningCategory'),3))),cost=lookup(g,action,'mpCost'),payment=g.where(g.and(party,discount),g.floor(g.add(g.mul(cost,.75),.75)),cost),prepaid=g.gt(lookup(g,action,'prepaidMP'),0),affordable=g.or(prepaid,protectedMp,g.and(g.not(party),g.ge(source.mp,255)),g.and(g.ge(cost,255),g.gt(source.mp,0)),g.and(g.lt(cost,255),g.ge(source.mp,payment))),supported=g.and(known,affordable,stateSupported),entered=g.and(enabled,supported,g.gt(source.hp,0)),rng=new RandomGraph(g,seed,position),rebuild=g.and(entered,g.not(already));
+  const discount=input(g,'mpDiscount',1,'bool',flagDomain,false),protectedMp=input(g,'mpProtected',1,'bool',flagDomain,false),known=actionSupported(g,action),party=asBool(g,source.party),stateSupported=g.or(g.not(party),g.not(g.eq(lookup(g,action,'planningCategory'),3))),cost=lookup(g,action,'mpCost'),payment=g.where(g.and(party,discount),g.floor(g.add(g.mul(cost,.75),.75)),cost),prepaid=g.gt(lookup(g,action,'prepaidMP'),0),affordable=g.or(prepaid,protectedMp,g.and(g.not(party),g.ge(source.mp,255)),g.and(g.ge(cost,255),g.gt(source.mp,0)),g.and(g.lt(cost,255),g.ge(source.mp,payment))),preSupported=g.and(known,affordable,stateSupported),preEntered=g.and(enabled,preSupported,g.gt(source.hp,0)),rng=new RandomGraph(g,seed,position),rebuild=g.and(preEntered,g.not(already));
   const first=g.add(rng.bounded(rebuild,2),3),second=g.add(rng.bounded(rebuild,3),6),repeat=lookup(g,action,'repeatCode'),table=[0,0,0,first,2,4,0,7,3,0,1,second];
   let requested=g.constant(0);for(let i=0;i<table.length;i++)requested=g.where(g.eq(repeat,i),table[i],requested);
   const rows=g.split(targetsInput,8),out=[...rows];
@@ -212,38 +216,44 @@ export function buildCommonCommandBegin(){
     const take=g.and(rebuild,g.gt(requested,i),g.gt(count,0)),index=rng.bounded(take,g.max(count,1));let selected=rows[0];for(let j=1;j<8;j++)selected=g.where(g.eq(index,j),rows[j],selected);
     out[i]=g.where(g.and(rebuild,g.gt(requested,0)),g.where(g.gt(requested,i),g.where(g.gt(count,0),selected,-1),g.where(g.gt(count,i),0,rows[i])),rows[i]);
   }
+  const selectedCount=g.where(g.and(rebuild,g.gt(requested,0)),requested,count),baseRate=input(g,'sourceCriticalBaseRate',1,'float32',{min:-1,max:100},-1),wide=input(g,'sourceWideWeapon',1,'bool',flagDomain,false),doubleHit=input(g,'sourceDoubleHitWeapon',1,'bool',flagDomain,false),extraSkill=input(g,'sourceExtraHitSkill',1,'bool',flagDomain,false),job=input(g,'sourceJob',1,'float32',{min:0,max:12,integer:true},0);
+  const expanded=expandCommonCommandTargets(g,rng,{enabled:preEntered,repeatCode:repeat,actionId:action,weaponRepeatFlag:g.gt(lookup(g,action,'weaponRepeatFlag'),0),party,wideWeapon:wide,doubleHitWeapon:doubleHit,extraHitSkill:extraSkill,job,targets:out,count:selectedCount}),finalCount=expanded.targetCount,supported=g.and(preSupported,expanded.capacity),entered=g.and(preEntered,expanded.capacity);
   source.mp=g.where(g.and(entered,g.not(prepaid),g.not(protectedMp),g.or(party,g.lt(source.mp,255))),g.where(g.ge(cost,255),0,g.sub(source.mp,payment)),source.mp);
-  const pre=g.and(entered,g.gt(lookup(g,action,'preCritical'),0)),forced=g.gt(lookup(g,action,'forcedCritical'),0),roll=rng.bounded(g.and(pre,g.not(forced)),10000),threshold=g.mul(source.criticalThreshold,g.mul(lookup(g,action,'criticalWeight'),.01)),critical=g.and(pre,g.or(forced,g.lt(roll,threshold)));
-  const output={nextSeed:rng.seed,nextPosition:rng.position,nextSourceActor:pack(g,ACTOR_FIELDS,source),nextTargets:g.cat(out),nextTargetCount:g.where(g.and(rebuild,g.gt(requested,0)),requested,count),commandCritical:critical,entered:scalar(g,entered),supported:scalar(g,supported),mpAffordable:scalar(g,affordable),reason:g.where(known,g.where(stateSupported,g.where(affordable,0,2),3),1),consumed:g.sub(rng.position,position)};
+  const mode=g.or(g.gt(lookup(g,action,'preCritical'),0),g.and(party,g.eq(action,1),wide)),pre=g.and(entered,mode),forced=g.gt(lookup(g,action,'forcedCritical'),0),roll=rng.bounded(g.and(pre,g.not(forced)),10000),threshold=commonCriticalThreshold(g,{baseThreshold:source.criticalThreshold,baseRate,weight:lookup(g,action,'criticalWeight'),hitCount:finalCount}),critical=g.and(pre,g.or(forced,g.lt(roll,threshold)));
+  const output={nextSeed:rng.seed,nextPosition:rng.position,nextSourceActor:pack(g,ACTOR_FIELDS,source),nextTargets:g.cat(expanded.targets),nextTargetCount:finalCount,commandCritical:critical,commandCriticalMode:mode,suppressRepeatedCombo:expanded.suppressRepeatedCombo,extraHit:expanded.extraHit,entered:scalar(g,entered),supported:scalar(g,supported),mpAffordable:scalar(g,affordable),reason:g.where(known,g.where(stateSupported,g.where(affordable,g.where(expanded.capacity,0,4),2),3),1),consumed:g.sub(rng.position,position)};
   for(const[name,value]of Object.entries(output))g.output(value,name);
-  g.contract.targetBoundary='Default-target callbacks may already perform both repeat-table draws and repeated sampling; targetsAlreadyRepeated preserves that result and avoids consuming them again. Otherwise these two draws occur even for repeatCode0. The caller supplies actual reconstructed target IDs, including empty lists. Word08 bit28 means planning already handled MP; cost255 otherwise consumes all current MP.';
-  g.contract.failureReasons={1:'Unknown action or unimplemented common effect',2:'MP不足の504への置換を準備段階で行う必要があります',3:'Party item-use category3 requires the original inventory/action-work caller state, which is not yet represented.'};
+  g.contract.targetBoundary='Default-target callbacks may already perform both repeat-table draws and repeated sampling; targetsAlreadyRepeated preserves that result and avoids consuming them again. Otherwise these two draws occur even for repeatCode0. A distinct original post-selection helper expands repeatCode1/2/6/9 and resolved weapon/skill repetitions into the32-slot execution list. Critical probability uses this complete count. Word08 bit28 means planning already handled MP; cost255 otherwise consumes all current MP.';
+  g.contract.failureReasons={1:'Unknown action or unimplemented common effect',2:'MP不足の504への置換を準備段階で行う必要があります',3:'Party item-use category3 requires the original inventory/action-work caller state, which is not yet represented.',4:'Expanded command target count exceeds the original32-slot buffer.'};
   return g;
 }
 
 function buildTargetKernel(){
-  let sa,ta,sc,tc,sourceTension,targetTension,sourcePreparation,targetPreparation,targetPresent,targetMetal,targetKinds,sourceMagic,sourcePackedScale,sourceWeapon,rawModifiers,chargedCount,coupBlocked,selectedCritical,raiseResult,transferred,recovered,mpRecovered,escaped,dispelApplied,blindApplied;
+  let sa,ta,sc,tc,sourceTension,targetTension,sourcePreparation,targetPreparation,targetPresent,targetMetal,targetKinds,sourceMagic,sourcePackedScale,sourceWeapon,sourceWideWeapon,hitIndex,rawModifiers,chargedCount,coupBlocked,selectedCritical,raiseResult,transferred,recovered,mpRecovered,escaped,dispelApplied,blindApplied,clearBladeDefenseFlag,routingResolved,allowTension,criticalAlreadyDrawn,suppliedCritical,resetCombo,skipComboUpdate,isCounter,originalAction;
   return buildBossActionCore({name:'rom-common-target-internal',actionIds:COMMON_SUPPORTED_ACTION_IDS,actionRules:rules,independentActors:true,allowPartyActions:true,gatherTargets:false,checkMp:false,spendMp:false,advanceContext:false,sharedBeforeTargetCheck:true,commandCritical:true,dataDrivenRank:true,exposeHitResults:true,
     sharedDraw(g,rng,gate){const already=g.input('sharedAlreadyDrawn',['N',1],'bool'),value=g.input('sharedRoll');return g.where(already,value,rng.bounded(g.and(gate,g.not(already)),100));},
-    sourceEligibility(g,r,source){const prepared=g.input('preparedConfusion',['N',1],'bool');return g.or(g.eq(r.operation,0),g.and(...['sleep','paralysis','skip'].map(k=>g.eq(source[k],0)),g.or(g.eq(source.confusion,0),prepared)));},
+    sourceEligibility(g,r,source){const prepared=g.input('preparedConfusion',['N',1],'bool');allowTension=g.input('allowTension',['N',1],'bool');return g.or(g.and(routingResolved,g.not(allowTension)),g.eq(r.operation,0),g.and(...['sleep','paralysis','skip'].map(k=>g.eq(source[k],0)),g.or(g.eq(source.confusion,0),prepared)));},
     targetEligibility(){return targetPresent;},
-    partyAcrobatSupport(g,r,before){return g.and(...before.map(a=>g.or(g.eq(a.acrobat,0),g.eq(a.party,0),g.eq(r.operation,49))));},
+    partyAcrobatSupport(g,r,before){routingResolved=g.input('routingResolved',['N',1],'bool');return g.or(routingResolved,g.and(...before.map(a=>g.or(g.eq(a.acrobat,0),g.eq(a.party,0),g.eq(r.operation,49)))));},
     additionalSupport(g,r,{source,target,partySource}){
       sa=aux(g,g.input('sourceAux',['N',21]));ta=aux(g,g.input('targetAux',['N',21]));sc=object(COMMON_CONFIG_FIELDS,g.split(g.input('sourceConfig',['N',7]),7));tc=object(COMMON_CONFIG_FIELDS,g.split(g.input('targetConfig',['N',7]),7));
       sourceTension=object(COMMON_TENSION_FIELDS,g.split(g.input('sourceTension',['N',3]),3));targetTension=object(COMMON_TENSION_FIELDS,g.split(g.input('targetTension',['N',3]),3));
       sourcePreparation=[...g.split(g.input('sourcePreparation',['N',5]),5)];targetPreparation=[...g.split(g.input('targetPreparation',['N',5]),5)];targetPresent=g.input('targetPresent',['N',1],'bool');chargedCount=g.input('chargedPartyCount');coupBlocked=g.input('coupBlocked',['N',1],'bool');
       sourceMagic=g.split(g.input('sourceMagic',['N',2]),2);sourcePackedScale=g.split(g.input('sourcePackedScale',['N',2]),2);
       rawModifiers=inputRawModifiers(g);const coverResolved=g.input('coverResolved',['N',1],'bool');targetMetal=g.input('targetMetal',['N',1],'bool');targetKinds=g.split(g.input('targetStatusKindsBytes',['N',2]),2);sourceWeapon=g.split(g.input('sourceWeapon',['N',4]),4);
-      return g.and(g.or(g.not(targetMetal),g.not(g.eq(r.operation,1))),g.or(g.le(target.defend,3),g.and(coverResolved,g.ge(target.defend,6),g.le(target.defend,8))),g.or(g.eq(sourcePreparation[0],0),g.eq(r.operation,0)),g.or(g.eq(targetTension.high,0),g.and(g.eq(r.operation,1),g.or(g.eq(r.additional,0),g.eq(r.additional,1),g.eq(r.additional,8))),g.or(...[0,2,3,4,5,9,15,19,20,21,22,23,24,26,27,28,49].map(value=>g.eq(r.operation,value)))),g.or(g.not(partySource),g.and(g.not(g.eq(r.selector,63)),g.not(g.eq(r.planningCategory,3)))));
+      criticalAlreadyDrawn=g.input('criticalAlreadyDrawn',['N',1],'bool');suppliedCritical=g.input('suppliedCritical',['N',1],'bool');resetCombo=g.input('resetCombo',['N',1],'bool');skipComboUpdate=g.input('skipComboUpdate',['N',1],'bool');isCounter=g.input('isCounter',['N',1],'bool');originalAction=g.input('originalActionId');sourceWideWeapon=g.input('sourceWideWeapon',['N',1],'bool');hitIndex=g.input('hitIndex');
+      return g.and(g.or(g.not(targetMetal),g.not(g.eq(r.operation,1))),g.or(g.eq(rawBit(g,rawModifiers.targetRawFlagsBytes,5),0),g.not(g.eq(r.operation,1))),g.or(g.le(target.defend,3),g.and(coverResolved,g.ge(target.defend,6),g.le(target.defend,8)),g.and(routingResolved,g.or(...[4,5,9].map(value=>g.eq(target.defend,value))))),g.or(g.and(routingResolved,g.not(allowTension)),g.eq(sourcePreparation[0],0),g.eq(r.operation,0)),g.or(g.eq(targetTension.high,0),g.and(g.eq(r.operation,1),g.or(...[0,1,8,11].map(value=>g.eq(r.additional,value)))),g.or(...[0,2,3,4,5,9,15,19,20,21,22,23,24,26,27,28,46,49,61,62].map(value=>g.eq(r.operation,value)))),g.or(g.not(partySource),g.and(g.not(g.eq(r.selector,63)),g.not(g.eq(r.planningCategory,3)))));
     },
     accuracyResistance(g,r,resistance){return resistance[2];},
     accuracyThreshold(g,rng,r,{source,partySource,active,critical,statusResistance}){
       return commonAccuracyThreshold(g,rng,r,{partySource,active,critical,statusResistance,magic:sourceMagic});
     },
-    criticalCheck(g,rng,r,gate,{source}){const forced=g.gt(r.forcedCritical,0),roll=rng.bounded(g.and(gate,g.not(forced)),10000);return g.and(gate,g.or(forced,g.lt(roll,g.mul(source.criticalThreshold,g.mul(r.criticalWeight,.01)))));},
+    criticalCheck(g,rng,r,gate,{source}){const check=g.and(gate,g.not(criticalAlreadyDrawn)),forced=g.gt(r.forcedCritical,0),roll=rng.bounded(g.and(check,g.not(forced)),10000),baseRate=g.input('sourceCriticalBaseRate'),hitCount=g.input('criticalHitCount'),threshold=commonCriticalThreshold(g,{baseThreshold:source.criticalThreshold,baseRate,weight:r.criticalWeight,hitCount});return g.and(check,g.or(forced,g.lt(roll,threshold)));},
+    finalCritical(g,active,normal){return g.and(active,g.or(g.and(criticalAlreadyDrawn,suppliedCritical),g.and(g.not(criticalAlreadyDrawn),normal)));},
+    comboUpdateGate(g,active){return g.and(active,g.not(resetCombo),g.not(skipComboUpdate));},
     criticalDamageGate(g,r,gate){return g.and(gate,g.or(g.eq(r.forcedCritical,0),g.gt(r.forcedCriticalBonus,0)),g.eq(r.criticalDamageSuppressed,0));},
     criticalDamage(g,rng,r,gate,raw,{preCritical,source}){
-      return commonCriticalDamage(g,rng,r,gate,raw,{preCritical,baseAttack:source.baseAttack});
+      const criticalRule={...r,attackCriticalFormula:g.where(g.and(g.gt(source.party,0),sourceWideWeapon),0,r.attackCriticalFormula)};
+      return commonCriticalDamage(g,rng,criticalRule,gate,raw,{preCritical,baseAttack:source.baseAttack});
     },
     baseDamage(g,rng,r,hit,{attack,defense,source,target,partySource}){
       const packed=g.gt(r.damageId,0),p=physical(g,rng.seed,rng.position,attack,defense,g.and(hit,g.not(packed)));rng.seed=p.seed;rng.position=p.position;
@@ -255,11 +265,12 @@ function buildTargetKernel(){
       // Selector63 is the exact enemy level branch at USA021da248. The
       // physical fallback above is still evaluated before these two draws.
       const burstGate=g.and(hit,g.eq(r.selector,63)),burstLevel=g.mul(g.mul(6,source.level),rng.range(burstGate,Math.fround(.9),1)),burstMinimum=g.mul(160,rng.range(burstGate,Math.fround(.9),Math.fround(1.1))),burst=g.floor(g.max(burstLevel,burstMinimum));
-      const selectedDamage=g.where(g.eq(r.selector,43),vacuum,g.where(g.eq(r.selector,45),selectedCritical,g.where(g.eq(r.selector,47),g.add(g.floor(g.mul(source.level,.25)),5),g.where(g.eq(r.selector,63),burst,selected)))),wrapped=g.sub(selectedDamage,g.mul(g.floor(g.mul(selectedDamage,1/65536)),65536));
+      const selectedDamage=g.where(g.eq(r.selector,43),vacuum,g.where(g.eq(r.selector,45),selectedCritical,g.where(g.eq(r.selector,47),g.add(g.floor(g.mul(source.level,.25)),5),g.where(g.eq(r.selector,63),burst,selected))));
+      const ordinary=g.or(g.eq(r.id,1),g.eq(r.id,2)),decay=g.and(g.gt(r.targetDecayFlag,0),g.or(g.not(ordinary),g.and(partySource,sourceWideWeapon))),coefficient=g.op('Gather',[g.constant(COMMON_TARGET_DAMAGE_FALLOFF,'float32',[5]),g.cast(g.max(0,g.min(hitIndex,4)),'int32')],{axis:0},{shape:['N',1]}),decayed=g.where(decay,g.floor(g.mul(selectedDamage,coefficient)),selectedDamage),wrapped=g.sub(decayed,g.mul(g.floor(g.mul(decayed,1/65536)),65536));
       return{seed:rng.seed,position:rng.position,damage:wrapped};
     },
     preCriticalDamage(g,rng,r,hit,base,{source,partySource}){
-      return commonTensionDamage(g,r,hit,base,{...sourceTension,partySource,level:source.level});
+      return commonTensionDamage(g,r,hit,base,{...Object.fromEntries(COMMON_TENSION_FIELDS.map(key=>[key,g.where(allowTension,sourceTension[key],0)])),partySource,level:source.level});
     },
     damageResistance(g,r,resistance){return g.where(g.eq(r.damageElement,0),1,resistanceFraction(g,resistance[4]));},
     postResistanceDamage(g,value,r,{partySource}){
@@ -267,7 +278,8 @@ function buildTargetKernel(){
     },
     beforeComboDamage(g,value,r){return g.where(g.and(asBool(g,targetTension.high),g.eq(r.operation,1)),g.mul(value,.5),value);},
     finalDamage(g,value,r){return g.where(g.gt(r.damageCap,0),g.min(value,r.damageCap),value);},
-    weaponCallbackGate(g,r,positive){return g.and(positive,g.not(g.eq(r.operation,15)));},
+    weaponCallbackGate(g,r,positive){return g.and(positive,g.not(isCounter),g.not(g.eq(r.operation,15)));},
+    wakeRecoveryGate(g,gate){return g.and(gate,g.not(isCounter));},
     targetEffect(g,r,hit,p){
       const {source,target,nextTarget,aux:legacyAux,status,rng,internalDamage,critical}=p;let applied=zero(g);const updates={};
       const heal=g.and(p.active,g.eq(r.operation,2),g.or(hit,g.gt(r.restoreHPFull,0))),requestedHeal=g.where(g.gt(r.restoreHPFull,0),target.maxHp,internalDamage),amount=g.where(heal,g.min(requestedHeal,g.sub(target.maxHp,target.hp)),0);updates.hp=g.where(heal,g.add(target.hp,amount),nextTarget.hp);recovered=g.where(heal,requestedHeal,0);
@@ -290,7 +302,14 @@ function buildTargetKernel(){
       const directSkip=g.and(hit,g.eq(r.operation,10)),extraGate=g.and(hit,g.eq(r.operation,1),g.eq(r.additional,1),g.gt(internalDamage,0),g.gt(p.resistance[2],0)),roll=rng.bounded(extraGate,100),chance=g.where(g.gt(r.additionalPlainChance,0),r.baseChance,g.where(critical,100,g.mul(r.baseChance,resistanceFraction(g,p.resistance[2])))),extraSkip=g.and(extraGate,g.lt(roll,chance));
       const skip=g.or(appealSkip,g.and(g.or(directSkip,extraSkip),g.gt(target.hp,0),g.eq(targetTension.high,0),g.eq(target.paralysis,0),g.or(g.eq(target.skip,0),g.not(g.eq(targetPreparation[2],r.secondaryParameter)))));
       updates.skip=g.where(skip,1,nextTarget.skip);updates.defend=g.where(skip,0,nextTarget.defend);targetPreparation[2]=g.where(skip,g.where(appealSkip,10,r.secondaryParameter),targetPreparation[2]);
-      const paralysis=g.or(appealParalysis,g.and(hit,g.eq(r.operation,24),g.gt(target.hp,0),g.eq(targetTension.high,0)));
+      // Additional11 (matching021e3a34) tests resistance/species and the
+      // living/high-tension predicate BEFORE drawing. Party and enemy chance
+      // fields differ. Original row82 is species9-only and fixed25% unless
+      // critical; row88 has a separate metal predicate/chance, whose complete
+      // metal damage caller remains outside this module's admitted state.
+      const speciesProc=g.gt(r.additionalParalysisSpecies,0),metalProc=g.and(g.gt(r.additionalParalysisMetalChance,0),targetMetal,g.eq(target.party,0)),paralysisEligible=g.where(speciesProc,scalar(g,g.and(g.eq(target.party,0),g.eq(sourceWeapon[3],r.additionalParalysisSpecies))),scalar(g,g.or(metalProc,g.gt(p.resistance[2],0)))),
+        paralysisGate=g.and(hit,g.eq(r.operation,1),g.eq(r.additional,11),g.gt(internalDamage,0),g.gt(paralysisEligible,0),g.gt(target.hp,0),g.eq(rawBit(g,rawModifiers.targetRawStatusBytes,0),0),g.eq(targetTension.high,0)),paralysisRoll=rng.bounded(paralysisGate,100),baseParalysis=g.where(g.gt(source.party,0),r.chanceMinimum,r.baseChance),paralysisChance=g.where(critical,100,g.where(speciesProc,25,g.where(metalProc,12.5,g.mul(baseParalysis,resistanceFraction(g,p.resistance[2]))))),extraParalysis=g.and(paralysisGate,g.lt(paralysisRoll,paralysisChance)),
+        paralysis=g.or(appealParalysis,extraParalysis,g.and(hit,g.eq(r.operation,24),g.gt(target.hp,0),g.eq(targetTension.high,0)));
       updates.paralysis=g.where(paralysis,1,nextTarget.paralysis);for(const key of['sleep','confusion','skip','defend'])updates[key]=g.where(paralysis,0,updates[key]??nextTarget[key]);
       for(const key of['sleepDuration','sleepRecovery','confusionDuration','confusionRecovery','paralysisDuration','paralysisRecovery'])status['a1_'+key]=g.where(paralysis,key==='paralysisDuration'?3:0,status['a1_'+key]);
       targetPreparation[2]=g.where(paralysis,0,targetPreparation[2]);
@@ -313,6 +332,7 @@ function buildTargetKernel(){
       const drain=g.and(hit,g.eq(r.operation,28)),taken=g.where(drain,g.min(internalDamage,target.mp),0),received=g.min(taken,g.max(g.sub(source.maxMp,source.mp),0));updates.mp=g.sub(target.mp,taken);source.mp=g.add(source.mp,received);transferred=taken;
       const mpRestore=g.and(hit,g.eq(r.operation,26)),mpAmount=g.where(mpRestore,g.where(g.gt(r.restoreMPFull,0),target.maxMp,internalDamage),0),nextMp=g.where(mpRestore,g.min(g.add(target.mp,mpAmount),target.maxMp),updates.mp);mpRecovered=g.where(mpRestore,g.sub(nextMp,target.mp),0);updates.mp=nextMp;recovered=g.where(mpRestore,mpAmount,recovered);
       const asleep=g.and(hit,g.eq(r.operation,8),g.eq(target.paralysis,0),g.gt(nextTarget.sleep,0)),clearAll=dispel,clearLow=g.or(clearAll,skip,paralysis,asleep);targetPreparation[2]=g.where(asleep,0,targetPreparation[2]);
+      clearBladeDefenseFlag=g.or(paralysis,asleep);
       targetTension.stage=g.where(clearLow,0,targetTension.stage);targetTension.low=g.where(clearLow,0,targetTension.low);targetTension.high=g.where(clearAll,0,targetTension.high);
       applied=g.or(escaped,g.and(heal,g.gt(amount,0)),attackRank,defenseProc,extraAgility,skip,paralysis,confusion,blindApplied,curedPrimary,dispel,g.and(raise,g.gt(raised.result,0)),g.gt(taken,0),g.and(mpRestore,g.or(g.gt(mpRecovered,0),g.and(g.eq(target.party,0),g.ge(nextMp,255)))));
       return{applied,target:updates};
@@ -323,12 +343,12 @@ function buildTargetKernel(){
       const result=angerCheck(g,rng,ta,{gate:g.and(p.active,p.partySource,enemy,g.gt(p.damage,0),g.gt(p.actors[1].hp,0),g.or(quarter,half)),blocked:blocked(g,p.actors[1]),chance:g.where(quarter,tc.angerQuarterChance,tc.angerHalfChance),minimum:tc.angerMin,maximum:tc.angerMax,sourceId:p.source.id});ta=result.aux;return result.activated;
     },
     afterHitRecovery(g,rng,p){
-      const charge=coup(g,rng,p.actors[1],ta,{gate:g.and(p.active,asBool(g,p.actors[1].party)),chance:g.add(coupDamageBonus(g,p.damage,p.actors[1].maxHp),p.rule.coupBonus),chargedPartyCount:chargedCount,blockedByBattle:coupBlocked});
+      const charge=coup(g,rng,p.actors[1],ta,{gate:g.and(p.active,asBool(g,p.actors[1].party)),chance:g.add(coupDamageBonus(g,p.damage,p.actors[1].maxHp),lookup(g,originalAction,'coupBonus')),chargedPartyCount:chargedCount,blockedByBattle:coupBlocked});
       return{hitCharge:charge,critAnger:zero(g),actionCharge:zero(g)};
     },
     extraOutputs(g,p){
       const dead=g.and(p.active,g.le(p.actors[1].hp,0));for(const key of COMMON_TENSION_FIELDS)targetTension[key]=g.where(dead,0,targetTension[key]);for(const j of[0,2])targetPreparation[j]=g.where(dead,0,targetPreparation[j]);
-      return{nextSourceLifecycleAux:g.cat(COMMON_AUX_FIELDS.slice(0,7).map(key=>sa[key])),nextTargetLifecycleAux:g.cat(COMMON_AUX_FIELDS.slice(0,7).map(key=>ta[key])),nextSourceTension:pack(g,COMMON_TENSION_FIELDS,sourceTension),nextTargetTension:pack(g,COMMON_TENSION_FIELDS,targetTension),nextSourcePreparation:g.cat(sourcePreparation),nextTargetPreparation:g.cat(targetPreparation),recoveryAmount:recovered,mpRecovered,drainedAmount:transferred,raiseResult,selectorDamage:selectedCritical,currentDefense:buffStat(g,p.actors[1].baseDefense,p.actors[1].defenseRank,'defense',true,p.actors[1].party),currentAgility:buffStat(g,p.actors[1].baseAgility,p.actors[1].agilityRank,'defense',true,p.actors[1].party),escaped:scalar(g,escaped),dispelApplied:scalar(g,dispelApplied),critical:g.cast(g.or(g.and(p.hit,g.eq(p.rule.selector,45),g.gt(selectedCritical,0)),p.critical??zero(g)),'float32')};
+      return{nextSourceLifecycleAux:g.cat(COMMON_AUX_FIELDS.slice(0,7).map(key=>sa[key])),nextTargetLifecycleAux:g.cat(COMMON_AUX_FIELDS.slice(0,7).map(key=>ta[key])),nextSourceTension:pack(g,COMMON_TENSION_FIELDS,sourceTension),nextTargetTension:pack(g,COMMON_TENSION_FIELDS,targetTension),nextSourcePreparation:g.cat(sourcePreparation),nextTargetPreparation:g.cat(targetPreparation),recoveryAmount:recovered,mpRecovered,drainedAmount:transferred,raiseResult,selectorDamage:selectedCritical,currentDefense:buffStat(g,p.actors[1].baseDefense,p.actors[1].defenseRank,'defense',true,p.actors[1].party),currentAgility:buffStat(g,p.actors[1].baseAgility,p.actors[1].agilityRank,'defense',true,p.actors[1].party),escaped:scalar(g,escaped),dispelApplied:scalar(g,dispelApplied),clearBladeDefenseFlag:scalar(g,clearBladeDefenseFlag),critical:g.cast(g.or(g.and(p.hit,g.eq(p.rule.selector,45),g.gt(selectedCritical,0)),p.critical??zero(g)),'float32')};
     }
   });
 }
@@ -345,12 +365,19 @@ export function buildCommonTargetEffect(){
   x.targetStatusKindsBytes=input(g,'targetStatusKindsBytes',2,'float32',byteDomain,[0,0]);
   for(const name of['sourceRawTimers','targetRawTimers'])x[name]=input(g,name,COMMON_RAW_TIMER_FIELDS.length,'float32',COMMON_RAW_TIMER_FIELDS.map((field,i)=>({name:field,...byteDomain,max:i%2?4:255})),Array(COMMON_RAW_TIMER_FIELDS.length).fill(0));
   x.coverResolved=input(g,'coverResolved',1,'bool',flagDomain,false);
+  for(const name of['routingResolved','criticalAlreadyDrawn','suppliedCritical','resetCombo','skipComboUpdate','isCounter','sourceWideWeapon'])x[name]=input(g,name,1,'bool',flagDomain,false);
+  x.hitIndex=input(g,'hitIndex',1,'float32',{min:0,max:31,integer:true},0);
+  x.allowTension=input(g,'allowTension',1,'bool',flagDomain,true);
+  x.originalActionId=input(g,'originalActionId',1,'float32',{min:0,max:65535,integer:true},0);
+  x.originalSourceId=input(g,'originalSourceId',1,'float32',{min:-1,max:199,integer:true},-1);
+  x.sourceCriticalBaseRate=input(g,'sourceCriticalBaseRate',1,'float32',{min:-1,max:100},-1);
+  x.criticalHitCount=input(g,'criticalHitCount',1,'float32',{min:0,max:32,integer:true},1);
   x.sharedAlreadyDrawn=input(g,'sharedAlreadyDrawn',1,'bool',flagDomain,false);x.sharedRoll=input(g,'sharedRoll',1,'float32',{min:0,max:99,integer:true},0);
   for(const name of['sourceHistory','targetHistory'])x[name]=input(g,name,2,'float32',{min:-32768,max:32767,integer:true},[-1,-1]);
   for(const name of['sourceState3c','targetState3c'])x[name]=input(g,name,1,'float32',byteDomain,0);
   for(const name of['sourcePreparation','targetPreparation']){delete g.contract.inputDomains[name];g.contract.fieldDomains[name]=preparationDomains;}
   const sourceAux=g.split(x.sourceAux,21),targetAux=g.split(x.targetAux,21),res=g.split(x.resistances,22),element=lookup(g,x.actionId,'effectElement'),damageElement=lookup(g,x.actionId,'damageElement'),byElement=id=>res.reduce((v,column,i)=>g.where(g.eq(id,i+1),column,v),g.constant(100));
-  const feeds={...x,actors:g.cat([x.sourceActor,x.targetActor]),aux:g.cat([g.add(g.mul(sourceAux[0],0),g.constant(Array(7).fill(0),'float32',[1,7])),...sourceAux.slice(7),...targetAux.slice(7)]),status:g.cat([x.sourceStatus,x.targetStatus]),wakeSkip:g.cat([x.sourceWakeSkip,x.targetWakeSkip]),config:x.sourceConfig,sourceIndex:g.mul(sourceAux[0],0),resistances:g.cat([res[18],res[19],byElement(element),res[15],byElement(damageElement)]),targetElementResistances:g.cat(res.slice(0,7))};
+  const originalAction=g.where(g.gt(x.originalActionId,0),x.originalActionId,x.actionId),feeds={...x,originalActionId:originalAction,actors:g.cat([x.sourceActor,x.targetActor]),aux:g.cat([g.add(g.mul(sourceAux[0],0),g.constant(Array(7).fill(0),'float32',[1,7])),...sourceAux.slice(7),...targetAux.slice(7)]),status:g.cat([x.sourceStatus,x.targetStatus]),wakeSkip:g.cat([x.sourceWakeSkip,x.targetWakeSkip]),config:x.sourceConfig,sourceIndex:g.mul(sourceAux[0],0),resistances:g.cat([res[18],res[19],byElement(element),res[15],byElement(damageElement)]),targetElementResistances:g.cat(res.slice(0,7))};
   const out=g.inline(kernel,feeds,'effect'),aa=g.split(out.nextActors,66),ax=g.split(out.nextAux,35),st=g.split(out.nextStatus,14),wake=g.split(out.nextWakeSkip,2),sourceLife=g.split(out.nextSourceLifecycleAux,7),targetLife=g.split(out.nextTargetLifecycleAux,7),same=g.and(x.targetPresent,g.eq(aa[32],aa[65]));
   let sourceActor=g.cat(aa.slice(0,33)),targetActor=g.cat(aa.slice(33));
   // For self effects target mutation wins; MP was already paid in begin and
@@ -362,8 +389,9 @@ export function buildCommonTargetEffect(){
   values.mpRecovered=out.mpRecovered;
   for(const key of['selectorDamage','currentDefense','currentAgility'])values[key]=out[key];
   values.accuracyPassed=out.accuracyPassed;
+  const tensionBefore=g.split(x.sourceTension,3);values.tensionUsed=scalar(g,g.and(g.gt(out.active,0),x.allowTension,g.gt(lookup(g,x.actionId,'tensionFlag'),0),g.or(g.gt(tensionBefore[1],0),g.gt(tensionBefore[2],0))));
   for(const key of['dodged','guarded','blindMiss','operationHit'])values[key]=out[key];
-  const died=g.and(g.gt(out.active,0),g.le(aa[33],0)),history=g.split(g.where(died,g.constant([-1,-1],'float32',[1,2]),x.targetHistory),2),partyToEnemy=g.and(g.gt(out.active,0),g.gt(aa[17],0),g.eq(aa[50],0)),nextHistory=g.where(partyToEnemy,g.cat([aa[32],history[0]]),g.cat(history)),mark=g.and(partyToEnemy,g.eq(lookup(g,x.actionId,'planningCategory'),2)),half=g.floor(g.mul(x.targetState3c,.5)),oldBit=g.sub(half,g.mul(g.floor(g.mul(half,.5)),2)),nextState3c=g.where(mark,g.add(x.targetState3c,g.mul(g.sub(1,oldBit),2)),x.targetState3c);
+  const originalSource=g.where(g.ge(x.originalSourceId,0),x.originalSourceId,aa[32]),died=g.and(g.gt(out.active,0),g.le(aa[33],0)),history=g.split(g.where(died,g.constant([-1,-1],'float32',[1,2]),x.targetHistory),2),partyToEnemy=g.and(g.gt(out.active,0),g.ge(originalSource,0),g.le(originalSource,3),g.eq(aa[50],0)),nextHistory=g.where(partyToEnemy,g.cat([originalSource,history[0]]),g.cat(history)),mark=g.and(partyToEnemy,g.eq(lookup(g,originalAction,'planningCategory'),2)),half=g.floor(g.mul(x.targetState3c,.5)),oldBit=g.sub(half,g.mul(g.floor(g.mul(half,.5)),2)),nextState3c=g.where(mark,g.add(x.targetState3c,g.mul(g.sub(1,oldBit),2)),x.targetState3c);
   values.nextTargetHistory=nextHistory;values.nextSourceHistory=g.where(same,nextHistory,x.sourceHistory);values.nextTargetState3c=nextState3c;values.nextSourceState3c=g.where(same,nextState3c,x.sourceState3c);
   // Typed flags and their independent raw state are projected together. The
   // original death/escape helpers and176-byte dispel mask also clear effects
@@ -383,11 +411,14 @@ export function buildCommonTargetEffect(){
     if(op===23)for(const shield of COMMON_MODIFIER_RULES.slice(2,4))clearCommonModifier(g,rawState,shield,g.and(changed,nonzero));
     values.effectApplied=scalar(g,g.or(g.gt(values.effectApplied,0),changed));
   }
+  const createdModifier=applyCommonModifierCreation(g,rawState,{operation,parameter:lookup(g,x.actionId,'parameter'),hit:g.gt(out.operationHit,0),present:x.targetPresent});
+  values.effectApplied=scalar(g,g.or(g.gt(values.effectApplied,0),createdModifier.applied));
   for(const[field,bit]of Object.entries({paralysis:3,sleep:4,confusion:5,blind:6,skip:19,doubleDodge:25,mpRegen:30,hpRegen:31}))rawOverlay(g,rawStatus,bit,scalar(g,g.gt(target[field],0)));
   for(const[field,bit]of Object.entries({attackRank:10,defenseRank:11,agilityRank:12}))rawOverlay(g,rawStatus,bit,scalar(g,g.not(g.eq(target[field],0))));
   const poison=g.or(g.gt(target.poison,0),g.and(g.gt(rawBit(g,oldStatus,1),0),g.not(g.eq(targetStatus[0],2))));rawOverlay(g,rawStatus,1,scalar(g,poison));
   rawOverlay(g,rawStatus,23,targetTension[1]);rawOverlay(g,rawStatus,24,targetTension[2]);
   for(const[field,bit]of Object.entries({doubleGuard:0,acrobat:10}))rawOverlay(g,rawFlags,bit,scalar(g,g.gt(target[field],0)));rawOverlay(g,rawFlags,12,targetLife[3]);
+  rawOverlay(g,rawFlags,5,g.where(g.gt(out.clearBladeDefenseFlag,0),0,rawBit(g,rawFlags,5)));
   for(const[value,start,width]of[[targetStatus[0],0,2],[targetPreparation[2],2,4],[targetPreparation[0],12,2]])for(let i=0;i<width;i++)rawOverlay(g,rawKinds,start+i,rawBit(g,[value],i));
   const blindChanged=g.and(g.gt(out.effectApplied,0),g.eq(lookup(g,x.actionId,'operation'),19)),blindKind=lookup(g,x.actionId,'parameter');
   for(let i=0;i<3;i++)rawOverlay(g,rawKinds,6+i,g.where(blindChanged,rawBit(g,[blindKind],i),rawBit(g,rawKinds,6+i)));
@@ -404,9 +435,11 @@ export function buildCommonTargetEffect(){
   g.contract.history='USA021eb5d0 target-loop tail and0208978c: every processed party-source/enemy-target iteration shifts stats32 to34 and writes the original source ID to32, even on miss or after lethal damage. Death/escape first clear both IDs; a party lethal hit consequently ends [sourceID,-1]. Planning category2 also sets stats3c bit1. Missing and already-dead targets do not reach this tail.';
   g.contract.partyPacked='JPN021e8458: party magic/mending interpolation truncates the slope product before spread; no scaling consumes range then spread. Six original special stat rows are encoded as data at JPN021ff082. sourcePackedScale holds raw party auxiliary word0/word4 low10, independent of actor attack. Enemy base0 consumes one spread draw. Critical actions1/219/505 use attack*.95..1.05; other eligible actions use signed16(rawBase)*1.5..2.0 before shared multipliers.';
   g.contract.stateSelectors=COMMON_STATE_SELECTOR_RULES;
+  g.contract.additionalParalysis='Matching021e3a34: additional11 checks positive damage, target presence, resistance/species eligibility and living/non-high-tension state before bounded100. Party chance is word14 bits7..13, enemy chance bits0..6; critical overrides only the chance. Row82 requires enemy species9 with25% chance, row88 metal uses12.5%. Success refreshes duration3/recovery0 and clears sleep, confusion, skip, ordinary defend, low tension and flags18 bit5. The original setter also clears that flag for direct sleep/paralysis.';
   g.contract.rawDamage='JPN021e7328: original damage element resistance precedes max(weapon elemental candidate, Force candidate). Force uses source word18 bit7 and word22 bits9..11; dual-element candidates round separately. Species equipment, fire/ice flags, species8 shield, magic barrier rank6 and breath barrier rank7 follow in their original multiply order. Healing operation2 ignores magic barrier. Operation22/23 creates barrier ranks; dispel, death and escape return the corresponding raw state/timer masks. The common post-status module owns expiration.';
-  g.contract.defend='Defend0..3 use the ordinary multiplier. Values6..8 require coverResolved from the shared cover-routing graph and add no defend multiplier, matching the original <=3 check. Values4/5/9 and unknown states are not admitted by this effect kernel.';
-  g.contract.exclusions=['Metal, counter, reflection, allocation failure and additional equipment proc effects require further shared effects.','Party item category3 requires original inventory and action-work state. Its caller is rejected before MP/RNG mutation; enemy use has no party inventory tail.','Force and fire/ice shield damage arithmetic and expiration are represented; their creation remains a separate unimplemented operation family.','Actions97/121 have separate target-list/final-hit handlers and explicitly report supported0 pending those common command semantics.','Unknown action operation/selector/additional effect is supported0 and preserves state.'];
+  g.contract.defend='Defend0..3 use the ordinary multiplier. Values6..8 require coverResolved; values4/5/9 and party acrobat require routingResolved from the shared source/target router. Values above3 add no defend multiplier, matching the original <=3 check.';
+  g.contract.routing='The common router owns source/target IDs and cached decisions. criticalAlreadyDrawn forwards the effective hit flag without another RNG draw; allowTension suppresses coefficient/bonus without erasing stored tension. resetCombo suppresses normal combo update. originalSourceId and originalActionId retain command provenance for history and target coup. isCounter suppresses the original weapon callback.';
+  g.contract.exclusions=['Metal, allocation failure and additional equipment proc effects require further shared effects. Operation1 against raw flags18 bit5 (blade defense) is explicitly unrepresented pending its damage/recoil callback.','Party item category3 requires original inventory and action-work state. Its caller is rejected before MP/RNG mutation; enemy use has no party inventory tail.','Actions97/121 have separate target-list/final-hit handlers and explicitly report supported0 pending those common command semantics.','Unknown action operation/selector/additional effect is supported0 and preserves state.'];
   return g;
 }
 
@@ -420,8 +453,8 @@ export function buildCommonCommandEnemyReaction(){
 export function buildCommonCommandEnd(){
   const g=new Graph('rom-common-command-end',commonContract('命令終了のテンション消費、味方行動者の必殺抽選とcontext更新。複数対象全体に1回適用します。'));
   const seed=input(g,'seed',8),position=input(g,'position',1,'int32'),source=actor(g,inputActor(g,'sourceActor')),state=aux(g,inputAux(g,'sourceAux')),cfg=object(COMMON_CONFIG_FIELDS,g.split(inputConfig(g,'sourceConfig'),7)),tension=object(COMMON_TENSION_FIELDS,g.split(inputTension(g,'sourceTension'),3)),action=input(g,'actionId'),context=g.split(input(g,'context',2,'float32',{min:0,max:65535,integer:true},[1,0]),2),enabled=input(g,'enabled',1,'bool'),enemies=input(g,'opponentsAlive',1,'bool',flagDomain,true),count=input(g,'chargedPartyCount',1,'float32',{min:0,max:4,integer:true},0),coupBlocked=input(g,'coupBlocked',1,'bool',flagDomain,false),rng=new RandomGraph(g,seed,position);
-  const supported=g.and(actionSupported(g,action),g.or(g.eq(source.party,0),g.not(g.eq(lookup(g,action,'planningCategory'),3)))),entered=g.and(enabled,supported),active=g.and(entered,g.gt(source.hp,0)),charge=coup(g,rng,source,state,{gate:g.and(active,asBool(g,source.party),enemies),chance:g.add(cfg.coupAfterActionChance,lookup(g,action,'coupBonus')),chargedPartyCount:count,blockedByBattle:coupBlocked}),consumed=g.and(active,g.gt(lookup(g,action,'tensionFlag'),0),g.or(asBool(g,tension.low),asBool(g,tension.high)));
-  source.defend=g.where(g.and(active,g.eq(lookup(g,action,'afterAction'),2)),1,source.defend);
+  const allowConsumption=input(g,'consumeTension',1,'bool',flagDomain,true),counterOccurred=input(g,'counterOccurred',1,'bool',flagDomain,false),supported=g.and(actionSupported(g,action),g.or(g.eq(source.party,0),g.not(g.eq(lookup(g,action,'planningCategory'),3)))),entered=g.and(enabled,supported),active=g.and(entered,g.gt(source.hp,0)),charge=coup(g,rng,source,state,{gate:g.and(active,asBool(g,source.party),enemies),chance:g.add(cfg.coupAfterActionChance,lookup(g,action,'coupBonus')),chargedPartyCount:count,blockedByBattle:coupBlocked}),consumed=g.and(active,allowConsumption,g.gt(lookup(g,action,'tensionFlag'),0),g.or(asBool(g,tension.low),asBool(g,tension.high)));
+  source.defend=g.where(g.and(active,g.not(counterOccurred),g.eq(lookup(g,action,'afterAction'),2)),1,source.defend);
   for(const key of COMMON_TENSION_FIELDS)tension[key]=g.where(consumed,0,tension[key]);
   const low=g.add(context[0],scalar(g,entered)),carry=g.floor(g.mul(low,1/65536)),high=g.add(context[1],carry),nextContext=g.cat([g.sub(low,g.mul(carry,65536)),g.sub(high,g.mul(g.floor(g.mul(high,1/65536)),65536))]);
   for(const[name,value]of Object.entries({nextSeed:rng.seed,nextPosition:rng.position,nextSourceActor:pack(g,ACTOR_FIELDS,source),nextSourceAux:pack(g,COMMON_AUX_FIELDS,state),nextSourceTension:pack(g,COMMON_TENSION_FIELDS,tension),nextContext,charged:scalar(g,charge),tensionConsumed:scalar(g,consumed),consumed:g.sub(rng.position,position),supported:scalar(g,supported)}))g.output(value,name);return g;

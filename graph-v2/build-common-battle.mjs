@@ -43,7 +43,7 @@ export async function buildCommonAi(){
 }
 export const COMMON_OPERATIONS={turnBegin:'rom-common-turn-begin',random:'rom-common-random',initiative:'rom-common-initiative',stateView:'rom-common-state-view',ai:'rom-common-ai-step',target:'rom-common-ai-target',
   extraActions:'rom-extra-actions',planningPreprocess:'rom-common-planning-preprocess',appeal:'rom-common-appeal',primaryRecovery:'rom-common-primary-recovery',prepareRoute:'rom-common-prepare-route',confusion:'rom-common-confusion-selection',confusionTarget:'rom-common-confusion-target',
-  commandBegin:'rom-common-command-begin',coverTarget:'rom-common-cover-target',targetEffect:'rom-common-target-effect',enemyReaction:'rom-common-command-enemy-reaction',commandEnd:'rom-common-command-end',
+  commandBegin:'rom-common-command-begin',coverTarget:'rom-common-cover-target',redirectTarget:'rom-common-redirect-target',redirectCritical:'rom-common-redirect-critical',targetEffect:'rom-common-target-effect',enemyReaction:'rom-common-command-enemy-reaction',commandEnd:'rom-common-command-end',
   postStatus:'rom-common-post-status',periodic:'rom-common-periodic',turnStatus:'rom-common-turn-status',
   presentationCommand:'rom-common-presentation-command',presentationStack:'rom-common-presentation-stack',presentationAdvance:'rom-common-presentation-advance'};
 export async function writeCommonProgram(){
@@ -57,7 +57,7 @@ export async function writeCommonProgram(){
     if(!found)throw Error('Missing shared module '+name);modules.push(found);
   }
   const program={schema:'dq9-common-battle-program-v1',runtimeVersion:1,name:'dq9-common-battle',
-    population:{party:4,enemies:8,groups:3,targetBuffer:8,authority:'ROM combat object and target-buffer layout; action and retry loops use explicit runtime budgets.'},
+    population:{party:4,enemies:8,groups:3,targetBuffer:8,executionTargetBuffer:32,authority:'ROM combat object, initial selection and expanded command-target layouts; action and retry loops use explicit runtime budgets.'},
     actorFields:ACTOR_FIELDS,operations:COMMON_OPERATIONS,modules,
     phases:[
       {op:'turn-begin',order:'clear combo and group limited-slot masks; preserve AI cursors'},
@@ -65,7 +65,7 @@ export async function writeCommonProgram(){
       {op:'planning',loop:'each ordered actor; first command, extra-count draw once, then requested additional commands',deferredJudgment:2},
       {op:'planning-preprocess',order:'all planned commands; prepayment and defend state before priority sorting'},
       {op:'priority',order:'stable ROM categories 1,5,10,normal,32; weapon-first within each category'},
-      {op:'commands',loop:'every planned command and every current target',order:['appeal','deferred-ai','primary-recovery','target-rebuild','command-begin','shared-hit-draw','cover-target','target-effects','enemy-reactions','command-end','post-status']},
+      {op:'commands',loop:'every planned command and every current target',order:['appeal','deferred-ai','primary-recovery','target-rebuild','command-begin','shared-hit-draw','cover-target','redirect-target','redirect-critical','target-effects','enemy-reactions','command-end','post-status']},
       {op:'finish',order:['entry-cleanup','party-hp','party-mp','party-poison','enemy-mp','enemy-poison','shared-status-roll','actor-status','turn-increment']},
       {op:'presentation',order:'all numerical commands and finish precede the generated presentation record queue'}
     ],

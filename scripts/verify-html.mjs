@@ -36,7 +36,7 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
     }catch(error){await route.abort();errors.push({kind:'runtime-read',message:error.message});}
   });
   const check=(name,passed,detail)=>checks.push({name,passed:!!passed,...(detail===undefined?{}:{detail})});
-  let initial,execution,chunked,dataOnlyDefinition,multiActor,stopped,budget,cameraBoundary,presentation,downloaded,mobile;
+  let initial,execution,chunked,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,downloaded,mobile;
   try{
     await page.goto(pathToFileURL(resolve(htmlPath)).href);await page.waitForFunction(()=>window.DQ9Release?.ready===true);
     initial=await page.evaluate(()=>{
@@ -97,6 +97,20 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
       return{exactState,programHash:record.programHash,definitionId:record.result.rows[0].actors.find(actor=>actor.definitionId===added)?.definitionId,complete:record.result.complete,graphCalls:record.result.graphExecutionCounts.ortCalls};
     });
     check('new-monster-definition-runs-without-program-change',dataOnlyDefinition.exactState&&dataOnlyDefinition.complete&&dataOnlyDefinition.definitionId===65000&&dataOnlyDefinition.programHash===initial.programHash&&dataOnlyDefinition.graphCalls>0,dataOnlyDefinition);
+    editedDefinition=await page.evaluate(async()=>{
+      const input=JSON.parse(document.getElementById('input-json').value),definitions=JSON.parse(document.getElementById('definitions-json').value);
+      const enemy=input.actors.find(actor=>actor.definitionId!==null),original=definitions.monsters[enemy.definitionId],added=65001;
+      definitions.monsters[added]={...structuredClone(original),id:added,name:'HTMLで追加した単発通常攻撃定義',scheme:3,judgment:0,actions:Array(6).fill(1),limitedSlots:0,extraActionMode:0};
+      enemy.definitionId=added;enemy.originalMonsterId=added;
+      document.getElementById('input-json').value=JSON.stringify(input);document.getElementById('definitions-json').value=JSON.stringify(definitions);
+      const record=await window.DQ9Release.run(),row=record.result.rows[0],actor=row.actors.find(actor=>actor.actorId===enemy.actorId);
+      const result={programHash:record.programHash,complete:record.result.complete,definitionId:actor.definitionId,originalMonsterId:actor.originalMonsterId,
+        changedTable:JSON.stringify(original.actions)!==JSON.stringify(definitions.monsters[added].actions),changedExtraActionMode:original.extraActionMode!==0,
+        commands:row.pendingCommands.filter(command=>command.sourceId===enemy.actorId).map(({sourceId,actionId,targetCount})=>({sourceId,actionId,targetCount})),
+        ortCalls:record.result.graphExecutionCounts.ortCalls,unresolvedEffects:record.result.unresolvedEffects};
+      document.getElementById('reset').click();document.getElementById('reset-definitions').click();return result;
+    });
+    check('edited-definition-data-controls-actions-and-count',editedDefinition.complete&&editedDefinition.programHash===initial.programHash&&editedDefinition.definitionId===65001&&editedDefinition.originalMonsterId===65001&&editedDefinition.changedTable&&editedDefinition.changedExtraActionMode&&editedDefinition.commands.length===1&&editedDefinition.commands[0].actionId===1&&editedDefinition.ortCalls>0,editedDefinition);
     multiActor=await page.evaluate(async()=>{
       const input=JSON.parse(document.getElementById('input-json').value),enemy=structuredClone(input.actors.find(actor=>actor.definitionId!==null));
       enemy.actorId=193;enemy.actor[window.DQ9Release.assets.actorFields.indexOf('id')]=193;input.actors.push(enemy);
@@ -158,7 +172,7 @@ export async function verifyHtml({htmlPath=resolve(root,'dist/dq9-battle-emulato
   finally{await context.close();await browser.close();}
   const result={schema:'dq9-common-html-verification-v1',passed:checks.every(item=>item.passed)&&errors.length===0,
     htmlPath:resolve(htmlPath),htmlSha256:hash(await readFile(htmlPath)),runtimeSource:ortDirectory?'existing local official distribution, intercepted at the pinned CDN URLs':'pinned CDN',
-    runtimeFiles,initial,execution,chunked,dataOnlyDefinition,multiActor,stopped,budget,cameraBoundary,presentation,downloaded,mobile,checks,errors,warnings,independentRomVerification:false};
+    runtimeFiles,initial,execution,chunked,dataOnlyDefinition,editedDefinition,multiActor,stopped,budget,cameraBoundary,presentation,downloaded,mobile,checks,errors,warnings,independentRomVerification:false};
   if(outputPath)await writeFile(resolve(outputPath),JSON.stringify(result,null,2)+'\n');return result;
 }
 

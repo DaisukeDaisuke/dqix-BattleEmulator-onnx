@@ -14,7 +14,7 @@ export const ACTION_DEFINITIONS=Object.fromEntries(Object.entries(firstById(rom.
     parameter:v.getInt16(48,true),secondaryParameter:v.getInt16(50,true),
     targetSide:(a.w08>>>8)&3,targetScope:w14>>>28,repeatCode:(w1c>>>14)&31,
     smartTarget:v.getUint16(12,true),wiseTarget:v.getUint16(14,true),
-    spell:!!(a.w10&1),ability:!!(a.w10&2),coverAllowed:!!(a.w10&0x1000),prepaid:!!(a.w08&0x10000000),planningCategory:(a.w18>>>12)&15,category:(w1c>>>19)&31,priority:(w2c>>>14)&63,weaponFirstEligible:!!(a.w10&0x80000),
+    spell:!!(a.w10&1),ability:!!(a.w10&2),coverAllowed:!!(a.w10&0x1000),magicReflectable:!!(a.w10&0x400),breathReflectable:!!(a.w10&4),counterAllowed:!!(a.w10&0x80),prepaid:!!(a.w08&0x10000000),planningCategory:(a.w18>>>12)&15,category:(w1c>>>19)&31,priority:(w2c>>>14)&63,weaponFirstEligible:!!(a.w10&0x80000),
     damageElement:(a.w08>>>22)&31,effectElement:(a.w18>>>27)&31,
     combo:!!(w2c&(1<<27)),raw:a.raw}];
 }));

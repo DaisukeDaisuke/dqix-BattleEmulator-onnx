@@ -4,11 +4,53 @@ import {concat, integer, string, message, node as protobufNode, tensor, valueInf
 import {analyzeExactArithmetic} from './exact-arithmetic-analysis.mjs';
 export const TYPES={float32:1,int32:6,bool:9};
 const broadcast=(a,b)=>a.length>b.length?a:b.length>a.length?b:a.map((x,i)=>x===1?b[i]:x);
+// Only identical deterministic expressions may share storage. Keep operand
+// order and all proof/rounding metadata: this is not algebraic simplification.
+const SHAREABLE_OPS=new Set(['Add','Sub','Mul','Div','MatMul','Floor','Min','Max','Less','LessOrEqual','Greater','GreaterOrEqual','Equal','And','Or','Not','Where','Cast','Split','Concat','Gather','GatherElements','Identity','Sqrt','Abs','Neg','Clip','Mod','Sign','Reshape','Transpose','Slice','ReduceSum','ReduceMin','ReduceMax']);
+function expressionKey(value){
+  if(typeof value==='number')return Object.is(value,-0)?['number','-0']:Number.isNaN(value)?['number','NaN']:value===Infinity?['number','Infinity']:value===-Infinity?['number','-Infinity']:value;
+  if(Array.isArray(value))return value.map(expressionKey);
+  if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,expressionKey(value[key])]));
+  return value;
+}
+const keyOf=value=>JSON.stringify(expressionKey(value));
+export function finalizeGraph(ir){
+  const publicOutputs=new Set(ir.outputs.map(value=>value.name)),aliases=new Map(),seen=new Map(),nodes=[];
+  let sharedNodes=0,identityNodes=0;
+  for(const node of ir.nodes){
+    const inputs=node.inputs.map(name=>aliases.get(name)??name),isPublic=node.outputs.some(name=>publicOutputs.has(name));
+    const outputTypes=node.outputs.map(name=>({...ir.values[name],name:undefined}));
+    if(node.op==='Identity'&&!isPublic&&node.outputs.length===1&&keyOf({...ir.values[inputs[0]],name:undefined})===keyOf(outputTypes[0])){
+      aliases.set(node.outputs[0],inputs[0]);identityNodes++;continue;
+    }
+    const details=Object.fromEntries(Object.entries(node).filter(([name])=>name!=='inputs'&&name!=='outputs'));
+    const key=keyOf({details,inputs,outputTypes}),previous=SHAREABLE_OPS.has(node.op)&&!isPublic?seen.get(key):undefined;
+    if(previous){node.outputs.forEach((name,index)=>aliases.set(name,previous.outputs[index]));sharedNodes++;continue;}
+    const kept={...node,inputs,outputs:[...node.outputs],attributes:{...node.attributes}};
+    nodes.push(kept);if(SHAREABLE_OPS.has(node.op))seen.set(key,kept);
+  }
+  const producers=new Map(nodes.flatMap((node,index)=>node.outputs.map(name=>[name,index]))),live=new Set(),pending=[...publicOutputs];
+  // An unknown future/custom operator is neither deduplicated nor removed.
+  for(const node of nodes)if(!SHAREABLE_OPS.has(node.op))pending.push(...node.outputs);
+  const names=new Set(pending);
+  while(pending.length){
+    const index=producers.get(pending.pop());if(index===undefined||live.has(index))continue;
+    live.add(index);for(const name of nodes[index].inputs)if(!names.has(name)){names.add(name);pending.push(name);}
+  }
+  const keptNodes=nodes.filter((_,index)=>live.has(index)),initializers=ir.initializers.filter(value=>names.has(value.name));
+  // Never re-intern constants: their existing typed payload, including signed
+  // zero and nonfinite bits, remains untouched. Public names are never aliases.
+  for(const value of ir.inputs)names.add(value.name);
+  for(const node of keptNodes)for(const name of node.outputs)names.add(name);
+  const values=Object.fromEntries(Object.entries(ir.values).filter(([name])=>names.has(name)));
+  return{...ir,inputs:ir.inputs,outputs:ir.outputs,initializers,nodes:keptNodes,values,
+    optimization:{version:'exact-expression-sharing-v1',inputNodes:ir.nodes.length,outputNodes:keptNodes.length,sharedNodes,identityNodes,deadNodes:nodes.length-keptNodes.length,inputInitializers:ir.initializers.length,outputInitializers:initializers.length}};
+}
 export class Graph {
   constructor(name,contract={}){this.name=name;this.contract=contract;this.inputs=[];this.outputs=[];this.nodes=[];this.initializers=[];this.values={};this.index=0;this.cache=new Map();}
   input(name,shape=['N',1],dtype='float32'){const v={name,shape,dtype};this.inputs.push(v);this.values[name]=v;return name;}
   constant(value,dtype='float32',shape=[1]){
-    const values=Array.isArray(value)?value:[value],key=JSON.stringify([dtype,shape,values]);
+    const values=Array.isArray(value)?value:[value],key=keyOf([dtype,shape,values]);
     if(this.cache.has(key))return this.cache.get(key);
     const name=`c${this.cache.size}`;this.cache.set(key,name);this.initializers.push({name,shape,dtype,values});this.values[name]={name,shape,dtype};return name;
   }
@@ -55,18 +97,19 @@ export class Graph {
   or(...xs){return xs.reduce((a,b)=>this.gt(this.where(a,1,this.cast(b,'float32')),0));}
   not(a){return this.eq(this.cast(a,'float32'),0);}
   where(c,a,b){return this.op('Where',[c,a,b]);} cast(a,type){return this.op('Cast',[a],{to:TYPES[type]});}
-  json(){const ir={schema:'dq9-graph-ir-v2',name:this.name,irVersion:8,opset:18,contract:this.contract,inputs:this.inputs,outputs:this.outputs,initializers:this.initializers,nodes:this.nodes,values:this.values};analyzeExactArithmetic(ir);return ir;}
+  finalized(){return finalizeGraph({schema:'dq9-graph-ir-v2',name:this.name,irVersion:8,opset:18,contract:this.contract,inputs:this.inputs,outputs:this.outputs,initializers:this.initializers,nodes:this.nodes,values:this.values});}
+  json(){const ir=this.finalized();analyzeExactArithmetic(ir);return ir;}
   model(){
-    const nodes=this.nodes.map(n=>protobufNode(n.op,n.inputs,n.outputs,Object.entries(n.attributes).map(([k,v])=>intAttribute(k,v))));
+    const ir=this.finalized(),nodes=ir.nodes.map(n=>protobufNode(n.op,n.inputs,n.outputs,Object.entries(n.attributes).map(([k,v])=>intAttribute(k,v))));
     // TensorProto raw_data stores BOOL as one byte per element. The original
     // numeric research serializer writes four-byte FLOAT/INT32 values only.
-    const constants=this.initializers.map(t=>t.dtype==='bool'
+    const constants=ir.initializers.map(t=>t.dtype==='bool'
       ?concat(t.shape.map(x=>integer(1,x)),integer(2,TYPES.bool),string(8,t.name),message(9,Uint8Array.from(t.values,x=>x?1:0)))
       :tensor(t.name,t.shape,t.values,TYPES[t.dtype]));
     const graph=concat(nodes.map(x=>message(1,x)),string(2,this.name),constants.map(x=>message(5,x)),this.inputs.map(x=>message(11,valueInfo(x.name,x.shape,TYPES[x.dtype]))),this.outputs.map(x=>message(12,valueInfo(x.name,x.shape,TYPES[x.dtype]))));
     return concat(integer(1,8),string(2,'DQ9 exact-rule graph experiment'),string(3,'2'),string(6,JSON.stringify(this.contract)),message(7,graph),message(8,concat(string(1,''),integer(2,18))));
   }
-  async save(directory=new URL('./',import.meta.url)){const data=this.model();await writeFile(new URL(`${this.name}.onnx`,directory),data);await writeFile(new URL(`${this.name}.json`,directory),JSON.stringify(this.json(),null,2)+'\n');return {name:this.name,bytes:data.length,nodes:this.nodes.length,ops:[...new Set(this.nodes.map(x=>x.op))],inputs:this.inputs,outputs:this.outputs};}
+  async save(directory=new URL('./',import.meta.url)){const data=this.model(),ir=this.json();await writeFile(new URL(`${this.name}.onnx`,directory),data);await writeFile(new URL(`${this.name}.json`,directory),JSON.stringify(ir,null,2)+'\n');return {name:this.name,bytes:data.length,nodes:ir.nodes.length,ops:[...new Set(ir.nodes.map(x=>x.op))],inputs:this.inputs,outputs:this.outputs};}
 }
 
 export function lcg(g,seed){

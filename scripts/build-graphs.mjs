@@ -33,6 +33,7 @@ export const stages = [
   'graph-v2/build-camera-record-bind.mjs',
   'graph-v2/build-common-action.mjs',
   'graph-v2/build-common-control.mjs',
+  'graph-v2/build-common-redirect.mjs',
   'graph-v2/build-common-presentation.mjs',
   'graph-v2/build-common-battle.mjs',
 ];
